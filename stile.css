@@ -57,6 +57,9 @@
 
 * { box-sizing: border-box; }
 
+/* «hidden» deve vincere anche su display: flex e grid (le schede sopra la schermata di accesso). */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--pagina);
