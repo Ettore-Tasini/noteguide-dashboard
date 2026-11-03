@@ -5,6 +5,7 @@ const SCHEDE = [
   { id: 'oggi', nome: 'Oggi' },
   { id: 'app', nome: 'App' },
   { id: 'social', nome: 'Social' },
+  { id: 'coda', nome: 'In coda per la pubblicazione' },
   { id: 'esperimenti', nome: 'Esperimenti', fase: 'Arriva con la fase 4, quando escono i primi video: le variabili in prova e quali valori vincono.' },
   { id: 'trend', nome: 'Trend', fase: 'Arriva con la fase 2: i video virali trovati su TikTok, la loro crescita e i ganci scaricati.' },
   { id: 'strategia', nome: 'Strategia', fase: 'Arriva con la fase 2: la strategia in corso e le versioni precedenti.' },
@@ -96,6 +97,11 @@ function datiEsempio() {
       { id: 'PC-ETTORE', persona: 'Ettore', ultimo_battito: new Date(ora - 4 * 60000).toISOString() },
       { id: 'PC-MATTEO', persona: 'Matteo', ultimo_battito: new Date(ora - 9 * 3600000).toISOString() },
     ],
+    coda: [
+      { titolo: 'NoteGuide-esempio', copertina: null, url: null, uscite: ['instagram', 'tiktok'].map((p) => (
+        { piattaforma: p, stato: 'programmata', quando: new Date(ora + 3 * 3600000).toISOString(),
+          didascalia: 'Wait for it… 🚀\n\nWrite it by hand, tap Check and NoteGuide shows you exactly where the mistake is.\n\n#math #noteguide' })) },
+    ],
     interruttori: ['tutto', 'pubblicazione', 'risposte', 'dm', 'tiktok'].map((nome) => (
       { nome, attivo: nome !== 'tiktok', motivo: nome === 'tiktok' ? 'captcha' : null, cambiato_alle: new Date(ora - 25 * 60000).toISOString() })),
   };
@@ -114,10 +120,12 @@ async function datiVeri(sb) {
     sb.from('decisioni').select('*').order('alle', { ascending: false }).limit(100),
     sb.from('pc').select('*').order('ultimo_battito', { ascending: false }),
     sb.from('interruttori').select('*').order('nome'),
+    sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note)')
+      .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -150,7 +158,21 @@ async function datiVeri(sb) {
       fonti: [...(campagne.size ? campagne : fonti)].map(([fonte, download]) => ({ fonte, download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori,
+    coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
+      video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
   };
+}
+
+// Una scheda per video: le sue uscite (piattaforma, ora, descrizione), il video da guardare e la copertina.
+function raggruppaCoda(righe) {
+  const perVideo = new Map();
+  for (const r of righe) {
+    const v = perVideo.get(r.video) || { titolo: r.titolo || 'Video senza titolo', copertina: r.copertina, url: r.url, uscite: [] };
+    v.uscite.push({ piattaforma: r.piattaforma, stato: r.stato, quando: r.quando, didascalia: r.didascalia });
+    perVideo.set(r.video, v);
+  }
+  const prima = (v) => v.uscite.map((u) => u.quando || '9999').sort()[0];
+  return [...perVideo.values()].sort((a, b) => prima(a).localeCompare(prima(b)));
 }
 
 // ---------------------------------------------------------------- grafici
@@ -350,6 +372,26 @@ function disegnaSocial(d) {
     post.map((x) => [esc(PIATTAFORME[x.piattaforma]), esc(x.titolo), giorno(x.data), `${x.punteggio.toFixed(1).replace('.', ',')}×`]));
 }
 
+const ora = (d) => new Date(d).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function paginaCoda(d) {
+  if (!d.coda.length) return '<section class="scheda"><h2>In coda per la pubblicazione</h2><p class="vuoto">Nessun video in coda.</p></section>';
+  const schede = d.coda.map((v) => {
+    const uscite = v.uscite.map((u) => `<div class="uscita">
+        <div class="quando"><span class="punto" style="background:${css(u.piattaforma)}"></span><strong>${esc(PIATTAFORME[u.piattaforma])}</strong> · ${u.quando ? esc(ora(u.quando)) : 'in caricamento'}</div>
+        <p class="didascalia">${esc(u.didascalia || '')}</p>
+      </div>`).join('');
+    const player = v.url
+      ? `<video class="video-coda" controls playsinline preload="none" ${v.copertina ? `poster="${esc(v.copertina)}"` : ''} src="${esc(v.url)}"></video>`
+      : '<div class="video-coda vuoto">Video non ancora caricato</div>';
+    const copertina = v.copertina
+      ? `<figure class="copertina"><img src="${esc(v.copertina)}" alt="Copertina di ${esc(v.titolo)}" loading="lazy"><figcaption>Copertina</figcaption></figure>` : '';
+    return `<section class="scheda voce-coda"><div class="media-coda">${player}${copertina}</div>
+      <div class="testo-coda"><h2>${esc(v.titolo)}</h2>${uscite}</div></section>`;
+  }).join('');
+  return `<p class="sotto intro-coda">I video programmati: escono da soli all'ora scritta, anche a PC spenti. Il video e la copertina restano qui finché non sono usciti dappertutto.</p>${schede}`;
+}
+
 function elencoDecisioni(decisioni) {
   if (!decisioni.length) return '<p class="vuoto">Ancora nessuna decisione.</p>';
   return `<ul class="elenco">${decisioni.map((x) => `<li><b>${esc(x.agente)}</b> <span class="quando">${fa(x.alle)}</span>`
@@ -392,7 +434,7 @@ function mostra(id) {
     main.innerHTML = `<section class="scheda"><h2>${esc(scheda.nome)}</h2><p class="in-arrivo">${esc(scheda.fase)}</p></section>`;
     return;
   }
-  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
+  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
   if (id === 'app') disegnaApp(dati);
   if (id === 'social') disegnaSocial(dati);
   if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
