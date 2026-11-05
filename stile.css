@@ -164,6 +164,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .elenco li:last-child { border-bottom: 0; }
 .elenco .quando { font-size: 12.5px; color: var(--muto); }
 .elenco .motivo { font-size: 13.5px; color: var(--testo-2); }
+.elenco .motivo ul, .resoconto ul, .resoconto ol { margin: 4px 0; padding-left: 20px; }
+.resoconto { margin-top: 6px; font-size: 14px; line-height: 1.5; }
+.resoconto summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--app); }
+.resoconto h3, .resoconto h4, .resoconto h5 { margin: 14px 0 4px; }
+.resoconto li { padding: 2px 0; border: 0; }
+.resoconto code { font-size: 12.5px; overflow-wrap: anywhere; }
 
 .stato { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; padding: 1px 8px 1px 6px; border-radius: 999px; border: 1px solid var(--bordo); }
 .stato::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
@@ -179,6 +185,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .accesso form { display: grid; gap: 8px; }
 .accesso input, .accesso button { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--bordo); background: var(--superficie); color: var(--testo); }
 .accesso button { background: var(--testo); color: var(--pagina); border: 0; font-weight: 600; cursor: pointer; }
+
+.modulo-richiesta { display: grid; gap: 6px; max-width: 560px; }
+.modulo-richiesta label { font-size: 13px; color: var(--testo-2); }
+.modulo-richiesta select, .modulo-richiesta textarea, .modulo-richiesta button { font: inherit; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--bordo); background: var(--superficie); color: var(--testo); }
+.modulo-richiesta textarea { resize: vertical; }
+.modulo-richiesta button { justify-self: start; background: var(--testo); color: var(--pagina); border: 0; font-weight: 600; cursor: pointer; padding: 9px 22px; }
+.modulo-richiesta button:disabled { opacity: 0.5; cursor: default; }
+.elenco [data-annulla] { margin-top: 6px; }
 
 /* In coda per la pubblicazione: il video (9:16) e la copertina a sinistra, le uscite con la descrizione a destra */
 .intro-coda { margin: 0 0 12px; }

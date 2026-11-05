@@ -10,6 +10,7 @@ const SCHEDE = [
   { id: 'trend', nome: 'Trend', fase: 'Arriva con la fase 2: i video virali trovati su TikTok, la loro crescita e i ganci scaricati.' },
   { id: 'strategia', nome: 'Strategia', fase: 'Arriva con la fase 2: la strategia in corso e le versioni precedenti.' },
   { id: 'video', nome: 'Video', fase: 'Arriva con la fase 3: anteprima e stato di ogni video prodotto.' },
+  { id: 'richieste', nome: 'Richieste' },
   { id: 'decisioni', nome: 'Decisioni' },
   { id: 'sistema', nome: 'Sistema' },
 ];
@@ -93,6 +94,11 @@ function datiEsempio() {
     tasti: [3, 2, 1].flatMap((i) => [['verifica', 40], ['suggerimento', 12], ['domanda', 7]]
       .map(([tasto, n]) => ({ giorno: isoGiorno(giorniFa(i)), tasto, quanti: Math.round(n * (0.7 + caso() * 0.6)) }))),
     costiMese: 0,
+    richieste: [
+      { id: 2, da: 'Ettore', per: 'Matteo', stato: 'nuova', testo: 'Prova la ricerca del Ricercatore con «homework hack».', creata_alle: new Date(ora - 3 * 60000).toISOString() },
+      { id: 1, da: 'Matteo', per: 'Ettore', stato: 'fatta', pc: 'PC-ETTORE', testo: 'Dimmi quanti video sono in coda.', creata_alle: new Date(ora - 50 * 60000).toISOString(),
+        risposta: '**4 video in coda**, il prossimo esce alle 19:30 su Instagram.\n\n- Torta: TikTok 21:00\n- Palestra: YouTube domani 17:00' },
+    ],
     follower,
     post,
     avvisi: [
@@ -134,10 +140,11 @@ async function datiVeri(sb) {
     sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note)')
       .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
     sb.from('tasti_app').select('giorno,tasto,quanti').gte('giorno', da).order('giorno'),
+    sb.from('richieste').select('*').order('creata_alle', { ascending: false }).limit(30),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -172,7 +179,7 @@ async function datiVeri(sb) {
         .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
       paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
-    follower, post, avvisi, decisioni, pc, interruttori, tasti,
+    follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste,
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
       video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
   };
@@ -477,10 +484,51 @@ function paginaCoda(d) {
   return `<p class="sotto intro-coda">I video programmati: escono da soli all'ora scritta, anche a PC spenti. Il video e la copertina restano qui finché non sono usciti dappertutto.</p>${schede}`;
 }
 
+// Grassetto, corsivo e codice dentro una riga di markdown, dopo aver tolto l'HTML.
+const mdRiga = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*?)\*/g, '$1<i>$2</i>');
+
+// Il markdown dei resoconti degli agenti: titoli, elenchi, tabelle e paragrafi. Basta questo, niente librerie.
+function markdown(testo) {
+  const out = [];
+  let elenco = null;
+  let tab = null;
+  const chiudi = () => {
+    if (elenco) out.push(`<${elenco.tipo}>${elenco.voci.map((v) => `<li>${v}</li>`).join('')}</${elenco.tipo}>`);
+    if (tab) out.push(tabella(tab[0].map((t) => [t]), tab.slice(1).map((r) => r.map(mdRiga))));
+    elenco = tab = null;
+  };
+  for (const riga of String(testo).split('\n')) {
+    const t = riga.trim();
+    const voce = t.match(/^(-|\d+\.)\s+(.*)/);
+    if (t.startsWith('|')) {
+      if (elenco) chiudi();
+      const celle = t.replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+      if (!celle.every((c) => /^:?-+:?$/.test(c))) (tab ||= []).push(celle);
+    } else if (voce && !(riga.startsWith(' ') && elenco)) {
+      const tipo = voce[1] === '-' ? 'ul' : 'ol';
+      if (tab || (elenco && elenco.tipo !== tipo)) chiudi();
+      (elenco ||= { tipo, voci: [] }).voci.push(mdRiga(voce[2]));
+    } else if (t && elenco && riga.startsWith(' ')) {
+      // Riga rientrata: continua la voce di prima (anche un sotto-punto).
+      elenco.voci[elenco.voci.length - 1] += (voce ? '<br>• ' + mdRiga(voce[2]) : ' ' + mdRiga(t));
+    } else {
+      chiudi();
+      const titolo = t.match(/^(#{1,4})\s+(.*)/);
+      if (titolo) out.push(`<h${Math.min(titolo[1].length + 2, 5)}>${mdRiga(titolo[2])}</h${Math.min(titolo[1].length + 2, 5)}>`);
+      else if (t) out.push(`<p>${mdRiga(t)}</p>`);
+    }
+  }
+  chiudi();
+  return out.join('');
+}
+
 function elencoDecisioni(decisioni) {
   if (!decisioni.length) return '<p class="vuoto">Ancora nessuna decisione.</p>';
   return `<ul class="elenco">${decisioni.map((x) => `<li><b>${esc(x.agente)}</b> <span class="quando">${fa(x.alle)}</span>`
-    + `<div>${esc(x.decisione)}</div><div class="motivo">Perché: ${esc(x.motivo)}</div></li>`).join('')}</ul>`;
+    + `<div>${esc(x.decisione)}</div><div class="motivo">${String(x.motivo).includes('\n') ? markdown(x.motivo) : `Perché: ${mdRiga(x.motivo)}`}</div>`
+    + (x.dati?.resoconto ? `<details class="resoconto"><summary>Leggi il resoconto intero</summary>${markdown(x.dati.resoconto)}</details>` : '')
+    + '</li>').join('')}</ul>`;
 }
 
 function paginaDecisioni(d) {
@@ -501,11 +549,67 @@ function paginaSistema(d) {
   </div>`;
 }
 
+// Richieste fra i due Claude: chi scrive qui fa lavorare il Claude in sottofondo sul PC della persona scelta.
+const STATI_RICHIESTA = { nuova: ['In attesa', 'attenzione'], in_corso: ['In corso', 'attenzione'], fatta: ['Fatta', 'bene'],
+  errore: ['Errore', 'grave'], annullata: ['Annullata', ''] };
+
+function paginaRichieste(d) {
+  const modulo = `<form id="modulo-richiesta" class="modulo-richiesta">
+      <label for="richiesta-per">Per chi</label>
+      <select id="richiesta-per"><option>Ettore</option><option>Matteo</option></select>
+      <label for="richiesta-testo">Cosa deve fare il suo Claude</label>
+      <textarea id="richiesta-testo" rows="4" maxlength="4000" required placeholder="Per esempio: dimmi quanti video sono in coda"></textarea>
+      <button type="submit"${sb ? '' : ' disabled'}>Invia</button>
+      <p id="esito-richiesta" class="sotto" role="status">${sb ? '' : 'Con i dati di esempio non si inviano richieste.'}</p>
+    </form>`;
+  const voci = d.richieste.map((r) => {
+    const [nome, classe] = STATI_RICHIESTA[r.stato] || [r.stato, ''];
+    return `<li><span class="stato ${classe}">${esc(nome)}</span> <b>${esc(r.da)} → ${esc(r.per)}</b> <span class="quando">${fa(r.creata_alle)}${r.pc ? ` · ${esc(r.pc)}` : ''}</span>`
+      + `<div>${esc(r.testo)}</div>`
+      + (r.risposta ? `<div class="resoconto">${markdown(r.risposta)}</div>` : '')
+      + (r.stato === 'nuova' && sb ? `<button class="bottone-tabella" data-annulla="${r.id}">Annulla</button>` : '')
+      + '</li>';
+  }).join('');
+  return `<div class="griglia"><section class="scheda"><h2>Nuova richiesta</h2><p class="sotto">La fa il Claude in sottofondo sul PC di quella persona, se lì le richieste sono accese. La risposta torna qui.</p>${modulo}</section>
+    <section class="scheda"><h2>Ultime richieste</h2>${voci ? `<ul class="elenco">${voci}</ul>` : '<p class="vuoto">Ancora nessuna richiesta.</p>'}</section></div>`;
+}
+
+async function ricaricaRichieste() {
+  const { data, error } = await sb.from('richieste').select('*').order('creata_alle', { ascending: false }).limit(30);
+  if (!error) dati.richieste = data;
+  if (attiva === 'richieste') mostra('richieste');
+}
+
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'modulo-richiesta') return;
+  e.preventDefault();
+  const esito = document.getElementById('esito-richiesta');
+  const testo = document.getElementById('richiesta-testo').value.trim();
+  if (!testo || !sb) return;
+  e.target.querySelector('button').disabled = true;
+  const { error } = await sb.rpc('nuova_richiesta', { p_per: document.getElementById('richiesta-per').value, p_testo: testo });
+  if (error) {
+    esito.textContent = `Non è andata: ${error.message}`;
+    e.target.querySelector('button').disabled = false;
+    return;
+  }
+  await ricaricaRichieste();
+});
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-annulla]');
+  if (!b || !sb) return;
+  b.disabled = true;
+  await sb.rpc('annulla_richiesta', { p_id: Number(b.dataset.annulla) });
+  await ricaricaRichieste();
+});
+
 // ---------------------------------------------------------------- avvio
 
 const tabelle = {};
 let dati = null;
 let attiva = 'oggi';
+let sb = null;
 
 function mostra(id) {
   attiva = id;
@@ -519,7 +623,7 @@ function mostra(id) {
     main.innerHTML = `<section class="scheda"><h2>${esc(scheda.nome)}</h2><p class="in-arrivo">${esc(scheda.fase)}</p></section>`;
     return;
   }
-  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
+  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
   if (id === 'app') disegnaApp(dati);
   if (id === 'social') disegnaSocial(dati);
   if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
@@ -559,7 +663,7 @@ async function avvia() {
     pillola.textContent = 'Dati di esempio';
     pillola.classList.add('esempio');
   } else {
-    const sb = window.supabase.createClient(supabaseUrl, supabaseChiavePubblica);
+    sb = window.supabase.createClient(supabaseUrl, supabaseChiavePubblica);
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return chiediAccesso(sb);
     try {
