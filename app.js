@@ -6,9 +6,9 @@ const SCHEDE = [
   { id: 'app', nome: 'App' },
   { id: 'social', nome: 'Social' },
   { id: 'coda', nome: 'In coda per la pubblicazione' },
-  { id: 'esperimenti', nome: 'Esperimenti', fase: 'Arriva con la fase 4, quando escono i primi video: le variabili in prova e quali valori vincono.' },
+  { id: 'esperimenti', nome: 'Esperimenti' },
   { id: 'trend', nome: 'Trend', fase: 'Arriva con la fase 2: i video virali trovati su TikTok, la loro crescita e i ganci scaricati.' },
-  { id: 'strategia', nome: 'Strategia', fase: 'Arriva con la fase 2: la strategia in corso e le versioni precedenti.' },
+  { id: 'strategia', nome: 'Strategia' },
   { id: 'video', nome: 'Video', fase: 'Arriva con la fase 3: anteprima e stato di ogni video prodotto.' },
   { id: 'richieste', nome: 'Richieste' },
   { id: 'decisioni', nome: 'Decisioni' },
@@ -94,6 +94,19 @@ function datiEsempio() {
     tasti: [3, 2, 1].flatMap((i) => [['verifica', 40], ['suggerimento', 12], ['domanda', 7]]
       .map(([tasto, n]) => ({ giorno: isoGiorno(giorniFa(i)), tasto, quanti: Math.round(n * (0.7 + caso() * 0.6)) }))),
     costiMese: 0,
+    strategie: [
+      { id: 1, alle: new Date(ora - 40 * 60000).toISOString(), svolta: true, riassunto: 'Apro «Gag dopo l\'app»: Mago tiene il 63% di visione.',
+        testo: '# Strategia di esempio\n\n## In 3 righe\n- Apro un esperimento: **gag dopo l\'app**.\n- Gli animati restano 7 video su 10.\n- Il Ricercatore cerca meme «Prof / Io».' },
+    ],
+    esperimenti: [
+      { id: 2, creato_alle: new Date(ora - 40 * 60000).toISOString(), nome: 'Gag dopo l\'app', formato: 'animato 3D', piattaforma: 'instagram', cosa_cambia: 'storia', stato: 'in_corso',
+        ipotesi: 'Una battuta dopo il segno rosso tiene la gente fino in fondo.', quota: '2 video su 10', come_si_giudica: 'punteggio sui primi 3-5 video maturi' },
+      { id: 1, creato_alle: new Date(ora - 4 * 86400000).toISOString(), nome: 'Meme «Prof / Io»', formato: 'meme', piattaforma: 'tiktok', cosa_cambia: 'formato e grafica', stato: 'perso',
+        ipotesi: 'Un meme fermo da 7 secondi costa poco e gira.', verdetto: 'punteggio 0,4 su 4 video', sicurezza: 'media', chiuso_alle: new Date(ora - 86400000).toISOString() },
+    ],
+    lezioni: [
+      { id: 1, alle: new Date(ora - 86400000).toISOString(), testo: 'La visione media finisce sul segno rosso di NoteGuide.', contesto: 'animati, Instagram, novembre', numeri: '4 video su 5', sicurezza: 'media' },
+    ],
     richieste: [
       { id: 2, da: 'Ettore', per: 'Matteo', stato: 'nuova', testo: 'Prova la ricerca del Ricercatore con «homework hack».', creata_alle: new Date(ora - 3 * 60000).toISOString() },
       { id: 1, da: 'Matteo', per: 'Ettore', stato: 'fatta', pc: 'PC-ETTORE', testo: 'Dimmi quanti video sono in coda.', creata_alle: new Date(ora - 50 * 60000).toISOString(),
@@ -141,10 +154,13 @@ async function datiVeri(sb) {
       .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
     sb.from('tasti_app').select('giorno,tasto,quanti').gte('giorno', da).order('giorno'),
     sb.from('richieste').select('*').order('creata_alle', { ascending: false }).limit(30),
+    sb.from('strategie').select('*').order('alle', { ascending: false }).limit(15),
+    sb.from('esperimenti').select('*').order('creato_alle', { ascending: false }).limit(100),
+    sb.from('lezioni').select('*').order('alle', { ascending: false }).limit(50),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -179,7 +195,7 @@ async function datiVeri(sb) {
         .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
       paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
-    follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste,
+    follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni,
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
       video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
   };
@@ -553,6 +569,56 @@ function paginaSistema(d) {
 const STATI_RICHIESTA = { nuova: ['In attesa', 'attenzione'], in_corso: ['In corso', 'attenzione'], fatta: ['Fatta', 'bene'],
   errore: ['Errore', 'grave'], annullata: ['Annullata', ''] };
 
+// Lo Stratega: la strategia in corso, le versioni prima e le lezioni. Lavora da solo; Ettore e Matteo lo fermano.
+const STATI_ESPERIMENTO = { in_corso: ['In corso', 'attenzione'], vinto: ['Vinto', 'bene'], perso: ['Perso', 'grave'], fermato: ['Fermato', ''] };
+
+function paginaStrategia(d) {
+  if (!d.strategie.length) return '<section class="scheda"><h2>Strategia</h2><p class="vuoto">Lo Stratega non ha ancora fatto il primo giro.</p></section>';
+  const [ora, ...prima] = d.strategie;
+  const svolta = (s) => (s.svolta ? ' <span class="stato attenzione">Svolta</span>' : '');
+  const lezioni = d.lezioni.map((l) => `<li>${mdRiga(l.testo)} <span class="quando">${fa(l.alle)}${l.sicurezza ? ` · sicurezza ${esc(l.sicurezza)}` : ''}</span>`
+    + `${l.contesto || l.numeri ? `<div class="motivo">${esc([l.contesto, l.numeri].filter(Boolean).join(' · '))}</div>` : ''}</li>`).join('');
+  return `<div class="griglia">
+    <section class="scheda"><h2>Strategia in corso${svolta(ora)}</h2><p class="sotto">Giro di ${fa(ora.alle)}${ora.pc ? ` · ${esc(ora.pc)}` : ''}</p>
+      <div class="resoconto">${markdown(ora.testo)}</div></section>
+    <section class="scheda"><h2>Lezioni</h2><p class="sotto">Le cose imparate: si possono riprovare, dicendo che cosa cambia</p>
+      ${lezioni ? `<ul class="elenco">${lezioni}</ul>` : '<p class="vuoto">Ancora nessuna.</p>'}</section>
+    <section class="scheda"><h2>Giri prima</h2>${prima.length ? `<ul class="elenco">${prima.map((s) => `<li>${mdRiga(s.riassunto)}${svolta(s)} <span class="quando">${fa(s.alle)}</span>`
+      + `<details class="resoconto"><summary>Leggi</summary>${markdown(s.testo)}</details></li>`).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
+  </div>`;
+}
+
+function paginaEsperimenti(d) {
+  const voce = (e) => {
+    const [nome, classe] = STATI_ESPERIMENTO[e.stato] || [e.stato, ''];
+    return `<li><span class="stato ${classe}">${esc(nome)}</span> <b>${e.id}. ${esc(e.nome)}</b> <span class="quando">${esc(PIATTAFORME[e.piattaforma] || 'Tutti i social')} · ${esc(e.formato)} · ${fa(e.creato_alle)}</span>`
+      + `<div>${mdRiga(e.ipotesi)}</div>`
+      + `<div class="motivo">${esc([e.cosa_cambia ? `Cambia: ${e.cosa_cambia}` : null, e.quota, e.come_si_giudica].filter(Boolean).join(' · '))}</div>`
+      + (e.verdetto ? `<div class="motivo">Verdetto: ${mdRiga(e.verdetto)}${e.sicurezza ? ` (sicurezza ${esc(e.sicurezza)})` : ''}</div>` : '')
+      + (e.fermato_da ? `<div class="motivo">Fermato da ${esc(e.fermato_da)}</div>` : '')
+      + (e.stato === 'in_corso' && sb ? `<button class="bottone-tabella" data-ferma="${e.id}">Ferma</button>` : '')
+      + '</li>';
+  };
+  const inCorso = d.esperimenti.filter((e) => e.stato === 'in_corso');
+  const chiusi = d.esperimenti.filter((e) => e.stato !== 'in_corso');
+  return `<div class="griglia">
+    <section class="scheda"><h2>In corso</h2><p class="sotto">Lo Stratega li apre e li chiude da solo. Se uno è sbagliato, fermatelo.</p>
+      ${inCorso.length ? `<ul class="elenco">${inCorso.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
+    <section class="scheda"><h2>Chiusi</h2><p class="sotto">Si giudicano sul punteggio: 70% visualizzazioni × mediana, 30% visione</p>
+      ${chiusi.length ? `<ul class="elenco">${chiusi.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
+  </div>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-ferma]');
+  if (!b || !sb) return;
+  b.disabled = true;
+  await sb.rpc('ferma_esperimento', { p_id: Number(b.dataset.ferma) });
+  const { data, error } = await sb.from('esperimenti').select('*').order('creato_alle', { ascending: false }).limit(100);
+  if (!error) dati.esperimenti = data;
+  if (attiva === 'esperimenti') mostra('esperimenti');
+});
+
 function paginaRichieste(d) {
   const modulo = `<form id="modulo-richiesta" class="modulo-richiesta">
       <label for="richiesta-per">Per chi</label>
@@ -623,7 +689,7 @@ function mostra(id) {
     main.innerHTML = `<section class="scheda"><h2>${esc(scheda.nome)}</h2><p class="in-arrivo">${esc(scheda.fase)}</p></section>`;
     return;
   }
-  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
+  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, esperimenti: paginaEsperimenti, strategia: paginaStrategia, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
   if (id === 'app') disegnaApp(dati);
   if (id === 'social') disegnaSocial(dati);
   if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
