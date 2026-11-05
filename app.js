@@ -14,6 +14,13 @@ const SCHEDE = [
   { id: 'sistema', nome: 'Sistema' },
 ];
 
+// Le fonti come le chiama Apple nei report, in italiano come sul sito di App Store Connect.
+const FONTI = { 'App Store search': "Ricerca sull'App Store", 'App Store browse': "Navigazione sull'App Store",
+  'App referrer': "Link da un'altra app", 'Web referrer': 'Link da un sito', Unavailable: 'Non disponibile',
+  'Institutional purchase': 'Acquisti istituzionali' };
+const nomiPaesi = new Intl.DisplayNames(['it'], { type: 'region' });
+const nomePaese = (codice) => { try { return nomiPaesi.of(codice); } catch { return codice; } };
+
 const fmtNumero = new Intl.NumberFormat('it-IT', { notation: 'compact', maximumFractionDigits: 1 });
 const fmtIntero = new Intl.NumberFormat('it-IT');
 const fmtEuro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -59,6 +66,7 @@ function datiEsempio() {
   }
   const fonti = [['TikTok', 410], ['Instagram', 260], ['Ricerca App Store', 220], ['YouTube', 90], ['Altro', 60]]
     .map(([fonte, download]) => ({ fonte, download }));
+  const paesi = [['Italia', 640], ['Stati Uniti', 180], ['Regno Unito', 70], ['Germania', 40]].map(([paese, download]) => ({ paese, download }));
   const follower = {};
   for (const [p, base, passo] of [['instagram', 180, 9], ['tiktok', 240, 16], ['youtube', 40, 3]]) {
     follower[p] = [];
@@ -80,7 +88,7 @@ function datiEsempio() {
   return {
     esempio: true,
     aggiornato: new Date(ora),
-    app: { giorni: appGiorni, fonti },
+    app: { giorni: appGiorni, fonti, paesi },
     costiMese: 0,
     follower,
     post,
@@ -130,9 +138,10 @@ async function datiVeri(sb) {
   const perGiorno = new Map();
   const fonti = new Map();
   const campagne = new Map();
+  const paesi = new Map();
   const nomiMetriche = { download: 'download', sessioni: 'sessioni', dispositivi: 'dispositivi', ricavi_usd: 'ricavi' };
   for (const m of metriche) {
-    for (const [prefisso, mappa] of [['fonte:', fonti], ['campagna:', campagne]]) {
+    for (const [prefisso, mappa] of [['fonte:', fonti], ['campagna:', campagne], ['paese:', paesi]]) {
       if (m.metrica === 'download' && m.dimensione.startsWith(prefisso)) {
         const k = m.dimensione.slice(prefisso.length);
         mappa.set(k, (mappa.get(k) || 0) + Number(m.valore));
@@ -155,7 +164,9 @@ async function datiVeri(sb) {
     aggiornato: new Date(),
     // Se nelle bio ci sono i link con la campagna, si vede da quale piattaforma arrivano i download.
     app: { giorni: [...perGiorno.values()].sort((a, b) => a.giorno.localeCompare(b.giorno)),
-      fonti: [...(campagne.size ? campagne : fonti)].map(([fonte, download]) => ({ fonte, download })).sort((a, b) => b.download - a.download) },
+      fonti: [...(campagne.size ? campagne : fonti)].map(([fonte, download]) => ({ fonte: FONTI[fonte] || fonte, download }))
+        .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
+      paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori,
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
@@ -213,7 +224,23 @@ function linee(el, serie, formato = numero, daZero = true) {
       itemStyle: { color: s.colore, borderColor: css('superficie'), borderWidth: 2 },
       endLabel: serie.length > 1 ? { show: true, formatter: s.nome, color: css('testo-2'), fontSize: 12 } : undefined,
       emphasis: { focus: 'series' },
+      ...s.extra,
     })),
+  });
+}
+
+// Colonne una sopra l'altra per giorno (una serie per piattaforma), con il bordo del fondo a staccare i pezzi.
+function pile(el, giorni, serie, formato = numero) {
+  const b = base();
+  disegna(el, {
+    ...b,
+    grid: { left: 4, right: 8, top: 12, bottom: 4, containLabel: true },
+    tooltip: { ...b.tooltip, trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: css('griglia') } }, valueFormatter: formato },
+    xAxis: { ...b.xAxis, type: 'category', data: giorni, axisLabel: { ...b.xAxis.axisLabel, formatter: etichetteDate(el) } },
+    yAxis: { ...b.yAxis, type: 'value', axisLabel: { ...b.yAxis.axisLabel, formatter: (v) => formato(v) } },
+    series: serie.map((s, i) => ({ name: s.nome, type: 'bar', stack: 'tot', data: s.valori, barMaxWidth: 24,
+      itemStyle: { color: s.colore, borderColor: css('superficie'), borderWidth: 2,
+        borderRadius: i === serie.length - 1 ? [4, 4, 0, 0] : 0 } })),
   });
 }
 
@@ -307,19 +334,66 @@ function paginaOggi(d) {
     </div>`;
 }
 
+// Download portati dai social, stimati: dai social non arrivano link (chi vede un video cerca NoteGuide sull'App
+// Store), quindi si confrontano i download dal primo video uscito con la media dei 28 giorni prima. Il margine è
+// quanto variano da soli i download in quel numero di giorni. I giorni di Apple sono completi dopo 2.
+function stimaSocial(d) {
+  const inizio = d.post.map((p) => p.data).sort()[0];
+  const fine = isoGiorno(giorniFa(2));
+  const prima = d.app.giorni.filter((x) => x.giorno < inizio).slice(-28);
+  const dopo = d.app.giorni.filter((x) => x.giorno >= inizio && x.giorno <= fine);
+  if (!inizio || prima.length < 14 || !dopo.length) return null;
+  const media = prima.reduce((s, x) => s + x.download, 0) / prima.length;
+  const scarto = Math.sqrt(prima.reduce((s, x) => s + (x.download - media) ** 2, 0) / prima.length);
+  const fatti = dopo.reduce((s, x) => s + x.download, 0);
+  const attesi = media * dopo.length;
+  const vis = d.post.filter((p) => p.data >= inizio && p.data <= fine).reduce((s, p) => s + p.vis, 0);
+  return { inizio, fine: dopo.at(-1).giorno, media, fatti, attesi, extra: Math.round(fatti - attesi),
+    margine: Math.round(scarto * Math.sqrt(dopo.length)), vis };
+}
+
+function schedaStima(st) {
+  const testa = '<section class="scheda eroe" style="grid-column: 1 / -1"><div class="etichetta">Download portati dai social, stima';
+  if (!st) return `${testa}</div><p class="vuoto">Servono almeno 14 giorni di download prima del primo video.</p></section>`;
+  const ogniMille = st.extra > 0 && st.vis
+    ? ` Circa ${(st.extra / st.vis * 1000).toFixed(1).replace('.', ',')} download ogni 1.000 visualizzazioni (${fmtIntero.format(st.vis)} quelle dei video usciti in quei giorni).` : '';
+  const chiaro = st.extra > st.margine ? 'più di quanto variano da soli' : 'dentro quanto variano da soli, quindi per ora non si distingue dal caso';
+  return `${testa} (dal ${giorno(st.inizio)} al ${giorno(st.fine)})</div>
+      <div class="valore">${st.extra > 0 ? '+' : ''}${fmtIntero.format(st.extra)}</div>
+      <div class="delta">${fmtIntero.format(st.fatti)} download contro i ${fmtIntero.format(Math.round(st.attesi))} attesi con la media dei 28 giorni prima
+        (${st.media.toFixed(1).replace('.', ',')} al giorno). Margine ±${st.margine}: ${chiaro}.${ogniMille}</div>
+      <p class="sotto" style="margin:8px 0 0">Dai social non arrivano link: chi vede un video cerca NoteGuide sull'App Store, e Apple lo conta come ricerca. Per questo è una stima e non un conteggio.</p>
+    </section>`;
+}
+
 function paginaApp(d) {
-  return `<div class="griglia">
-    ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store, ultimi 60 giorni')}
+  return `<div class="tessere">${schedaStima(stimaSocial(d))}</div><div class="griglia">
+    ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store. Tratteggio: la media prima dei social; zona grigia: da quando escono i video')}
+    ${schedaGrafico('visual', 'Visualizzazioni dei video', 'Per giorno di uscita, tutti i social, ultimi numeri letti', legenda(Object.entries(PIATTAFORME).map(([p, nome]) => [nome, css(p)])))}
     ${schedaGrafico('attivi', 'Utenti attivi', 'Dispositivi che hanno aperto l\'app, per giorno')}
     ${schedaGrafico('ricavi', 'Ricavi netti per settimana', 'Acquisti di crediti al netto della quota di Apple, in dollari come li dà Apple')}
     ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni: per campagna se i link nelle bio la indicano, altrimenti per fonte')}
+    ${schedaGrafico('paesi', 'Da quali paesi', 'Primi download degli ultimi 90 giorni')}
   </div>`;
 }
 
 function disegnaApp(d) {
   const g = d.app.giorni;
   const colore = css('app');
-  linee(document.getElementById('g-download'), [{ nome: 'Download', colore, punti: g.map((x) => [x.giorno, x.download]) }]);
+  const st = stimaSocial(d);
+  linee(document.getElementById('g-download'), [{ nome: 'Download', colore, punti: g.map((x) => [x.giorno, x.download]), extra: st ? {
+    markLine: { silent: true, symbol: 'none', lineStyle: { color: css('asse'), type: 'dashed' },
+      label: { formatter: 'media prima', color: css('muto'), position: 'insideStartTop' }, data: [{ yAxis: +st.media.toFixed(1) }] },
+    markArea: { silent: true, itemStyle: { color: css('griglia') }, data: [[{ xAxis: st.inizio }, { xAxis: g.at(-1).giorno }]] } } : undefined }]);
+  const giorniVideo = [...new Set(d.post.map((p) => p.data))].sort();
+  const visual = Object.entries(PIATTAFORME).map(([p, nome]) => ({ nome, colore: css(p),
+    valori: giorniVideo.map((gv) => d.post.filter((x) => x.piattaforma === p && x.data === gv).reduce((s, x) => s + x.vis, 0)) }));
+  pile(document.getElementById('g-visual'), giorniVideo, visual);
+  const paesi = d.app.paesi.slice(0, 8);
+  colonne(document.getElementById('g-paesi'), paesi.map((x) => x.paese), paesi.map((x) => x.download), colore, numero, true);
+  tabelle.visual = () => tabella([['Giorno'], ...visual.map((v) => [v.nome, 1])],
+    giorniVideo.map((gv, i) => [giorno(gv), ...visual.map((v) => fmtIntero.format(v.valori[i]))]));
+  tabelle.paesi = () => tabella([['Paese'], ['Download', 1]], d.app.paesi.map((x) => [esc(x.paese), fmtIntero.format(x.download)]));
   linee(document.getElementById('g-attivi'), [{ nome: 'Utenti attivi', colore, punti: g.map((x) => [x.giorno, x.dispositivi]) }]);
   // Solo settimane complete (da lunedì a domenica), così la prima e l'ultima non sembrano un calo.
   const tutte = new Map();
