@@ -18,6 +18,7 @@ const SCHEDE = [
 const FONTI = { 'App Store search': "Ricerca sull'App Store", 'App Store browse': "Navigazione sull'App Store",
   'App referrer': "Link da un'altra app", 'Web referrer': 'Link da un sito', Unavailable: 'Non disponibile',
   'Institutional purchase': 'Acquisti istituzionali' };
+const TASTI = { verifica: 'Verifica', suggerimento: 'Suggerimento', domanda: 'Domanda' };
 const nomiPaesi = new Intl.DisplayNames(['it'], { type: 'region' });
 const nomePaese = (codice) => { try { return nomiPaesi.of(codice); } catch { return codice; } };
 
@@ -89,6 +90,8 @@ function datiEsempio() {
     esempio: true,
     aggiornato: new Date(ora),
     app: { giorni: appGiorni, fonti, paesi },
+    tasti: [3, 2, 1].flatMap((i) => [['verifica', 40], ['suggerimento', 12], ['domanda', 7]]
+      .map(([tasto, n]) => ({ giorno: isoGiorno(giorniFa(i)), tasto, quanti: Math.round(n * (0.7 + caso() * 0.6)) }))),
     costiMese: 0,
     follower,
     post,
@@ -130,10 +133,11 @@ async function datiVeri(sb) {
     sb.from('interruttori').select('*').order('nome'),
     sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note)')
       .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
+    sb.from('tasti_app').select('giorno,tasto,quanti').gte('giorno', da).order('giorno'),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -168,7 +172,7 @@ async function datiVeri(sb) {
         .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
       paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
-    follower, post, avvisi, decisioni, pc, interruttori,
+    follower, post, avvisi, decisioni, pc, interruttori, tasti,
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
       video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
   };
@@ -374,6 +378,7 @@ function paginaApp(d) {
     ${schedaGrafico('ricavi', 'Ricavi netti per settimana', 'Acquisti di crediti al netto della quota di Apple, in dollari come li dà Apple')}
     ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni: per campagna se i link nelle bio la indicano, altrimenti per fonte')}
     ${schedaGrafico('paesi', 'Da quali paesi', 'Primi download degli ultimi 90 giorni')}
+    ${schedaGrafico('tasti', 'I tasti dell\'app, dal più usato', `Quante volte si sceglie una voce dalla tendina di Verifica, Suggerimento e Domanda${d.tasti.length ? `, dal ${giorno(d.tasti[0].giorno)}` : ''}. Solo il numero, non chi li preme; il tutorial non conta`)}
   </div>`;
 }
 
@@ -393,6 +398,12 @@ function disegnaApp(d) {
   colonne(document.getElementById('g-paesi'), paesi.map((x) => x.paese), paesi.map((x) => x.download), colore, numero, true);
   tabelle.visual = () => tabella([['Giorno'], ...visual.map((v) => [v.nome, 1])],
     giorniVideo.map((gv, i) => [giorno(gv), ...visual.map((v) => fmtIntero.format(v.valori[i]))]));
+  const totTasti = Object.entries(TASTI).map(([k, nome]) => [nome, d.tasti.filter((x) => x.tasto === k).reduce((s, x) => s + x.quanti, 0)])
+    .sort((a, b) => b[1] - a[1]);
+  colonne(document.getElementById('g-tasti'), totTasti.map((x) => x[0]), totTasti.map((x) => x[1]), colore, numero, true);
+  const giorniTasti = [...new Set(d.tasti.map((x) => x.giorno))].sort().reverse();
+  tabelle.tasti = () => tabella([['Giorno'], ...Object.values(TASTI).map((n) => [n, 1])], giorniTasti.map((gt) => [giorno(gt),
+    ...Object.keys(TASTI).map((k) => fmtIntero.format(d.tasti.find((x) => x.giorno === gt && x.tasto === k)?.quanti ?? 0))]));
   tabelle.paesi = () => tabella([['Paese'], ['Download', 1]], d.app.paesi.map((x) => [esc(x.paese), fmtIntero.format(x.download)]));
   linee(document.getElementById('g-attivi'), [{ nome: 'Utenti attivi', colore, punti: g.map((x) => [x.giorno, x.dispositivi]) }]);
   // Solo settimane complete (da lunedì a domenica), così la prima e l'ultima non sembrano un calo.
