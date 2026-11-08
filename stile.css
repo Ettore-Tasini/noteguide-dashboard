@@ -212,3 +212,4 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .media-coda { grid-template-columns: 1fr 80px; }
 }
 .uscita .quando { font-size: 13px; color: var(--testo-2); }
+.elenco textarea.bozza { display: block; width: 100%; box-sizing: border-box; margin: 8px 0 6px; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--bordo); background: var(--superficie); color: var(--testo); resize: vertical; }

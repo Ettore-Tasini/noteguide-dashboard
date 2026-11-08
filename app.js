@@ -7,6 +7,7 @@ const SCHEDE = [
   { id: 'social', nome: 'Social' },
   { id: 'coda', nome: 'In coda per la pubblicazione' },
   { id: 'esperimenti', nome: 'Esperimenti' },
+  { id: 'commenti', nome: 'Commenti' },
   { id: 'trend', nome: 'Trend', fase: 'Arriva con la fase 2: i video virali trovati su TikTok, la loro crescita e i ganci scaricati.' },
   { id: 'strategia', nome: 'Strategia' },
   { id: 'video', nome: 'Video', fase: 'Arriva con la fase 3: anteprima e stato di ogni video prodotto.' },
@@ -104,6 +105,10 @@ function datiEsempio() {
       { id: 1, creato_alle: new Date(ora - 4 * 86400000).toISOString(), nome: 'Meme «Prof / Io»', formato: 'meme', piattaforma: 'tiktok', cosa_cambia: 'formato e grafica', stato: 'perso',
         ipotesi: 'Un meme fermo da 7 secondi costa poco e gira.', verdetto: 'punteggio 0,4 su 4 video', sicurezza: 'media', chiuso_alle: new Date(ora - 86400000).toISOString() },
     ],
+    commenti: [
+      { id: 2, alle: new Date(ora - 3 * 3600000).toISOString(), piattaforma: 'instagram', autore: 'giulia', commento: 'Does it work with geometry too?', bozza: null, tipo: 'domanda', stato: 'a_persona', motivo: 'non è nei fatti dell’app', post_url: '#' },
+      { id: 1, alle: new Date(ora - 5 * 3600000).toISOString(), piattaforma: 'instagram', autore: 'luca', commento: '🔥🔥🔥 the cake', bozza: 'Grandpa survived, the cake did not 😅 Thanks!', tipo: 'complimento', stato: 'bozza', post_url: '#' },
+    ],
     lezioni: [
       { id: 1, alle: new Date(ora - 86400000).toISOString(), testo: 'La visione media finisce sul segno rosso di NoteGuide.', contesto: 'animati, Instagram, novembre', numeri: '4 video su 5', sicurezza: 'media' },
     ],
@@ -157,10 +162,11 @@ async function datiVeri(sb) {
     sb.from('strategie').select('*').order('alle', { ascending: false }).limit(15),
     sb.from('esperimenti').select('*').order('creato_alle', { ascending: false }).limit(100),
     sb.from('lezioni').select('*').order('alle', { ascending: false }).limit(50),
+    sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(60),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -195,7 +201,7 @@ async function datiVeri(sb) {
         .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
       paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
-    follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni,
+    follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
       video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
   };
@@ -619,6 +625,44 @@ document.addEventListener('click', async (e) => {
   if (attiva === 'esperimenti') mostra('esperimenti');
 });
 
+const STATI_RISPOSTA = { bozza: ['Bozza', ''], a_persona: ['A voi', 'attenzione'], approvata: ['Approvata', 'bene'], inviata: ['Inviata', 'bene'], scartata: ['Scartata', ''] };
+
+// Il Community manager scrive le bozze; qui Ettore e Matteo le approvano (anche cambiate) o le scartano (Matteo, 8/11).
+function paginaCommenti(d) {
+  const voce = (c) => {
+    const [nome, classe] = STATI_RISPOSTA[c.stato] || [c.stato, ''];
+    const aperta = ['bozza', 'a_persona'].includes(c.stato);
+    return `<li><span class="stato ${classe}">${esc(nome)}</span> <b>@${esc(c.autore || '?')}</b> <span class="quando">${esc(PIATTAFORME[c.piattaforma] || c.piattaforma)} · ${esc(c.tipo || '')} · ${fa(c.alle)}</span>`
+      + `<div>«${esc(c.commento)}» ${c.post_url ? `<a href="${esc(c.post_url)}" target="_blank" rel="noopener">post</a>` : ''}</div>`
+      + (c.motivo ? `<div class="motivo">${esc(c.motivo)}</div>` : '')
+      + (aperta && sb
+        ? `<textarea class="bozza" data-testo="${c.id}" rows="2" placeholder="Scrivete la risposta">${esc(c.bozza || '')}</textarea>`
+          + `<button class="bottone-tabella" data-risposta="${c.id}" data-approva="1">Approva</button> <button class="bottone-tabella" data-risposta="${c.id}" data-approva="0">Scarta</button>`
+        : (c.bozza ? `<div>Risposta: ${esc(c.bozza)}${c.decisa_da ? ` <span class="quando">(${esc(c.decisa_da)})</span>` : ''}</div>` : ''))
+      + '</li>';
+  };
+  const commenti = d.commenti || [];
+  const aperte = commenti.filter((c) => ['bozza', 'a_persona'].includes(c.stato));
+  const decise = commenti.filter((c) => !['bozza', 'a_persona'].includes(c.stato));
+  return `<div class="griglia">
+    <section class="scheda"><h2>Da decidere</h2><p class="sotto">Bozze del Community manager: niente esce senza il vostro «Approva». Le approvate si mandano con «gestionale community invia».</p>
+      ${aperte.length ? `<ul class="elenco">${aperte.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuna.</p>'}</section>
+    <section class="scheda"><h2>Decise</h2>
+      ${decise.length ? `<ul class="elenco">${decise.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuna.</p>'}</section>
+  </div>`;
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-risposta]');
+  if (!b || !sb) return;
+  b.disabled = true;
+  const testo = document.querySelector(`[data-testo="${b.dataset.risposta}"]`)?.value || null;
+  await sb.rpc('decidi_risposta', { p_id: Number(b.dataset.risposta), p_approva: b.dataset.approva === '1', p_testo: testo });
+  const { data, error } = await sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(60);
+  if (!error) dati.commenti = data;
+  if (attiva === 'commenti') mostra('commenti');
+});
+
 function paginaRichieste(d) {
   const modulo = `<form id="modulo-richiesta" class="modulo-richiesta">
       <label for="richiesta-per">Per chi</label>
@@ -689,7 +733,7 @@ function mostra(id) {
     main.innerHTML = `<section class="scheda"><h2>${esc(scheda.nome)}</h2><p class="in-arrivo">${esc(scheda.fase)}</p></section>`;
     return;
   }
-  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, esperimenti: paginaEsperimenti, strategia: paginaStrategia, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
+  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, esperimenti: paginaEsperimenti, commenti: paginaCommenti, strategia: paginaStrategia, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
   if (id === 'app') disegnaApp(dati);
   if (id === 'social') disegnaSocial(dati);
   if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
