@@ -568,6 +568,13 @@ function paginaSistema(d) {
   return `<div class="griglia">
     <section class="scheda"><h2>PC</h2><p class="sotto">Battito ogni 10 minuti</p>${tabella([['PC'], ['Di'], ['Stato'], ['Ultimo battito']], pc)}</section>
     <section class="scheda"><h2>Interruttori</h2><p class="sotto">Si cambiano dal terminale: gestionale pausa, gestionale tiktok riprendi</p>${tabella([['Nome'], ['Stato'], ['Perché']], interruttori)}</section>
+    <section class="scheda"><h2>La tua password</h2><p class="sotto">Scegline una e falla salvare al telefono: poi si entra senza email</p>
+      <form id="modulo-password" class="modulo-password">
+        <input type="email" autocomplete="username" value="${esc(d.email || '')}" hidden>
+        <input id="nuova-password" type="password" autocomplete="new-password" minlength="8" required placeholder="Almeno 8 caratteri">
+        <button type="submit" class="bottone-tabella"${sb ? '' : ' disabled'}>Salva</button>
+      </form>
+      <p id="esito-password" class="sotto" role="status"></p></section>
   </div>`;
 }
 
@@ -690,6 +697,15 @@ async function ricaricaRichieste() {
   if (attiva === 'richieste') mostra('richieste');
 }
 
+// Con una password salvata nel telefono si entra senza aspettare l'email (Matteo, 8/11: «senza troppi sbattimenti»).
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'modulo-password') return;
+  e.preventDefault();
+  const esito = document.getElementById('esito-password');
+  const { error } = await sb.auth.updateUser({ password: document.getElementById('nuova-password').value });
+  esito.textContent = error ? `Non è andata: ${error.message}` : 'Salvata. La prossima volta entri con email e password.';
+});
+
 document.addEventListener('submit', async (e) => {
   if (e.target.id !== 'modulo-richiesta') return;
   e.preventDefault();
@@ -778,6 +794,7 @@ async function avvia() {
     if (!session) return chiediAccesso(sb);
     try {
       dati = await datiVeri(sb);
+      dati.email = session.user.email;
       pillola.textContent = `Aggiornato alle ${dati.aggiornato.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
     } catch (err) {
       document.getElementById('contenuto').innerHTML = `<section class="scheda"><h2>Non riesco a leggere i dati</h2><p class="sotto">${esc(err.message)}</p></section>`;
@@ -792,12 +809,22 @@ function chiediAccesso(sb) {
   document.getElementById('schede').hidden = true;
   const sezione = document.getElementById('accesso');
   sezione.hidden = false;
+  const esito = document.getElementById('esito-accesso');
+  const email = () => document.getElementById('email').value.trim();
   document.getElementById('modulo-accesso').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = document.getElementById('email').value.trim();
-    const esito = document.getElementById('esito-accesso');
-    const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-    esito.textContent = error ? `Non è andata: ${error.message}` : 'Fatto: controlla la posta e apri il link da questo dispositivo.';
+    const password = document.getElementById('password').value;
+    if (!password) { esito.textContent = 'Scrivi la password, oppure chiedi il link per email.'; return; }
+    const { error } = await sb.auth.signInWithPassword({ email: email(), password });
+    if (error) { esito.textContent = `Non è andata: ${error.message === 'Invalid login credentials' ? 'email o password sbagliate' : error.message}`; return; }
+    location.reload();
+  });
+  document.getElementById('manda-link').addEventListener('click', async () => {
+    if (!email()) { esito.textContent = 'Scrivi prima la tua email.'; return; }
+    const { error } = await sb.auth.signInWithOtp({ email: email(), options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
+    esito.textContent = !error ? 'Fatto: controlla la posta e apri il link in questo stesso browser. Poi scegli una password in «Sistema».'
+      : /rate limit/i.test(error.message) ? 'Troppe email in poco tempo (Supabase gratis ne manda 2 all’ora): riprova fra un’ora.'
+      : `Non è andata: ${error.message}`;
   });
 }
 

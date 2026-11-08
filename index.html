@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
+  <!-- Aggiunta alla schermata Home dell'iPhone si apre come un'app, e il login resta (Matteo, 8/11) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Gestionale">
   <title>NoteGuide Gestionale</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236250d6'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="stile.css">
@@ -22,11 +26,14 @@
 
   <section id="accesso" class="accesso" hidden>
     <h1>Accesso</h1>
-    <p>Scrivi la tua email: ti arriva un link per entrare. Funziona solo per Ettore e Matteo.</p>
+    <p>Entra con email e password. Solo Ettore e Matteo hanno un account.</p>
     <form id="modulo-accesso">
       <label for="email">Email</label>
-      <input id="email" type="email" autocomplete="email" required>
-      <button type="submit">Mandami il link</button>
+      <input id="email" name="email" type="email" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password">
+      <button type="submit">Entra</button>
+      <button type="button" id="manda-link" class="secondario">Prima volta o password dimenticata: mandami un link per email</button>
     </form>
     <p id="esito-accesso" role="status"></p>
   </section>
