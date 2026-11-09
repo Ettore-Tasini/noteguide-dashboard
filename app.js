@@ -76,6 +76,13 @@ function datiEsempio() {
     let f = base;
     for (let i = 30; i >= 0; i--) { f += Math.round(passo * (0.4 + caso() * 1.2)); follower[p].push([isoGiorno(giorniFa(i)), f]); }
   }
+  const imbuto = [];
+  for (let i = 14; i >= 0; i--) {
+    const igVis = Math.round(2000 + caso() * 7000);
+    imbuto.push({ giorno: isoGiorno(giorniFa(i)), igVis, igVisite: Math.round(igVis * (0.002 + caso() * 0.003)),
+      igTocchi: Math.round(caso() * 4), daFuori: i < 2 ? null : Math.round(caso() * 5), ricerca: i < 2 ? null : Math.round(35 + caso() * 30),
+      download: i < 2 ? null : Math.round(3 + caso() * 7) });
+  }
   const temi = ['animali', 'sport', 'cucina', 'scienza', 'film', 'gaming'];
   const post = [];
   for (let i = 14; i >= 1; i--) {
@@ -91,7 +98,7 @@ function datiEsempio() {
   return {
     esempio: true,
     aggiornato: new Date(ora),
-    app: { giorni: appGiorni, fonti, paesi },
+    app: { giorni: appGiorni, fonti, paesi, imbuto },
     tasti: [3, 2, 1].flatMap((i) => [['verifica', 40], ['suggerimento', 12], ['domanda', 7]]
       .map(([tasto, n]) => ({ giorno: isoGiorno(giorniFa(i)), tasto, quanti: Math.round(n * (0.7 + caso() * 0.6)) }))),
     costiMese: 0,
@@ -173,10 +180,12 @@ async function datiVeri(sb) {
     sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(60),
     sb.from('video').select('titolo,stato,anteprima,creato_alle,note,pubblicazioni(id,piattaforma,stato,url,programmata_per,pubblicata_alle)')
       .order('creato_alle', { ascending: false }).limit(60),
+    sb.from('metriche_account').select('giorno,metrica,valore').eq('piattaforma', 'instagram')
+      .in('metrica', ['visualizzazioni', 'visite_profilo', 'tocchi_link']).gte('giorno', isoGiorno(giorniFa(30))),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -198,6 +207,7 @@ async function datiVeri(sb) {
   const follower = {};
   for (const a of account) (follower[a.piattaforma] ||= []).push([a.giorno, Number(a.valore)]);
   const ultimaVista = new Map();
+  const imbuto = imbutoDai(metriche, profiloIg);
   for (const m of metrichePost) ultimaVista.set(m.pubblicazione_id, Number(m.visualizzazioni));
   const post = pubblicazioni.map((p) => ({ piattaforma: p.piattaforma, data: p.pubblicata_alle.slice(0, 10), url: p.url,
     titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo', vis: ultimaVista.get(p.id) ?? null })).filter((p) => p.vis != null);
@@ -209,7 +219,8 @@ async function datiVeri(sb) {
     app: { giorni: [...perGiorno.values()].sort((a, b) => a.giorno.localeCompare(b.giorno)),
       fonti: [...(campagne.size ? campagne : fonti)].map(([fonte, download]) => ({ fonte: FONTI[fonte] || fonte, download }))
         .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
-      paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
+      paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download),
+      imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
     video: video.map((v) => ({ titolo: v.titolo || 'Video senza titolo', stato: v.stato, creato: v.creato_alle,
@@ -381,6 +392,45 @@ function paginaOggi(d) {
     </div>`;
 }
 
+// Dal video al download, giorno per giorno (9/11): visualizzazioni, visite al profilo e tocchi sul link di Instagram;
+// visite alla pagina dell'App Store arrivate da fuori (link da un'altra app o dal web, più la pagina web
+// dell'App Store), volte in cui NoteGuide compare nella ricerca, download. Un numero non ancora letto resta vuoto.
+const DA_FUORI = ['fonte:App referrer', 'fonte:Web referrer'];
+function imbutoDai(metriche, profiloIg) {
+  const giorni = new Map();
+  const g = (k) => giorni.get(k) || giorni.set(k, { giorno: k, igVis: null, igVisite: null, igTocchi: null, daFuori: null, ricerca: null, download: null }).get(k);
+  const somma = (x, campo, v) => { x[campo] = (x[campo] ?? 0) + v; };
+  for (const a of profiloIg) {
+    const campo = { visualizzazioni: 'igVis', visite_profilo: 'igVisite', tocchi_link: 'igTocchi' }[a.metrica];
+    if (campo) g(a.giorno)[campo] = Number(a.valore);
+  }
+  for (const m of metriche) {
+    const v = Number(m.valore);
+    if (m.metrica === 'download' && !m.dimensione) g(m.giorno).download = v;
+    else if (m.metrica === 'impressioni' && !m.dimensione) { const x = g(m.giorno); x.daFuori ??= 0; x.ricerca ??= 0; }
+    if (m.metrica === 'impressioni' && m.dimensione === 'fonte:App Store search') g(m.giorno).ricerca = v;
+    if ((m.metrica === 'visite_pagina' && DA_FUORI.includes(m.dimensione)) || (m.metrica === 'visite_web' && !m.dimensione)) somma(g(m.giorno), 'daFuori', v);
+  }
+  const da = isoGiorno(giorniFa(30));
+  return [...giorni.values()].filter((x) => x.giorno >= da).sort((a, b) => a.giorno.localeCompare(b.giorno));
+}
+
+// Visite al profilo e tocchi sul link ogni 1.000 visualizzazioni, sugli ultimi 14 giorni che hanno tutti e tre i numeri.
+function ogniMille(imbuto) {
+  const pieni = imbuto.filter((x) => x.igVis && x.igVisite != null && x.igTocchi != null).slice(-14);
+  const vis = pieni.reduce((s, x) => s + x.igVis, 0);
+  if (!vis) return null;
+  return { giorni: pieni.length, vis, visite: pieni.reduce((s, x) => s + x.igVisite, 0), tocchi: pieni.reduce((s, x) => s + x.igTocchi, 0) };
+}
+
+function righeImbuto(om) {
+  if (!om) return '<p class="vuoto">I numeri del profilo di Instagram arrivano con la prossima raccolta.</p>';
+  const virgola = (v) => v.toFixed(v < 1 ? 2 : 1).replace('.', ',');
+  return `<p class="delta" style="margin:0 0 8px">Instagram, ultimi ${om.giorni} giorni: <strong>${virgola(om.visite / om.vis * 1000)} visite al profilo</strong> e
+    <strong>${virgola(om.tocchi / om.vis * 1000)} tocchi sul link</strong> ogni 1.000 visualizzazioni
+    (${fmtIntero.format(om.vis)} visualizzazioni, ${fmtIntero.format(om.visite)} visite, ${fmtIntero.format(om.tocchi)} tocchi).</p>`;
+}
+
 // Download portati dai social, stimati: dai social non arrivano link (chi vede un video cerca NoteGuide sull'App
 // Store), quindi si confrontano i download dal primo video uscito con la media dei 28 giorni prima. Il margine è
 // quanto variano da soli i download in quel numero di giorni. I giorni di Apple sono completi dopo 2.
@@ -415,6 +465,7 @@ function schedaStima(st) {
 
 function paginaApp(d) {
   return `<div class="tessere">${schedaStima(stimaSocial(d))}</div><div class="griglia">
+    ${schedaGrafico('imbuto', 'Dal video al download', 'Per giorno. Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download. I numeri di Apple arrivano dopo circa 2 giorni', righeImbuto(ogniMille(d.app.imbuto || [])))}
     ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store. Tratteggio: la media prima dei social; zona grigia: da quando escono i video')}
     ${schedaGrafico('visual', 'Visualizzazioni dei video', 'Per giorno di uscita, tutti i social, ultimi numeri letti', legenda(Object.entries(PIATTAFORME).map(([p, nome]) => [nome, css(p)])))}
     ${schedaGrafico('attivi', 'Utenti attivi', 'Dispositivi che hanno aperto l\'app, per giorno')}
@@ -428,6 +479,14 @@ function paginaApp(d) {
 function disegnaApp(d) {
   const g = d.app.giorni;
   const colore = css('app');
+  const imb = d.app.imbuto || [];
+  linee(document.getElementById('g-imbuto'), [
+    { nome: 'Profilo IG', colore: css('instagram'), punti: imb.map((x) => [x.giorno, x.igVisite]) },
+    { nome: 'Da fuori', colore: css('muto'), punti: imb.map((x) => [x.giorno, x.daFuori]) },
+    { nome: 'Download', colore, punti: imb.map((x) => [x.giorno, x.download]) }]);
+  const cella = (v) => (v == null ? '–' : fmtIntero.format(v));
+  tabelle.imbuto = () => tabella([['Giorno'], ['IG visual.', 1], ['Visite al profilo', 1], ['Tocchi sul link', 1], ['App Store da fuori', 1], ['Nella ricerca', 1], ['Download', 1]],
+    [...imb].reverse().map((x) => [giorno(x.giorno), cella(x.igVis), cella(x.igVisite), cella(x.igTocchi), cella(x.daFuori), cella(x.ricerca), cella(x.download)]));
   const st = stimaSocial(d);
   linee(document.getElementById('g-download'), [{ nome: 'Download', colore, punti: g.map((x) => [x.giorno, x.download]), extra: st ? {
     markLine: { silent: true, symbol: 'none', lineStyle: { color: css('asse'), type: 'dashed' },
