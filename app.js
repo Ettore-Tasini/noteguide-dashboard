@@ -136,8 +136,15 @@ function datiEsempio() {
       { alle: new Date(ora - 50 * 3600000).toISOString(), agente: 'Revisore', decisione: 'Bocciato un video: testo con «illimitato».', motivo: "L'AI gratuita ha 15 usi al giorno." },
     ],
     pc: [
-      { id: 'PC-ETTORE', persona: 'Ettore', ultimo_battito: new Date(ora - 4 * 60000).toISOString() },
+      { id: 'PC-ETTORE', persona: 'Ettore', ultimo_battito: new Date(ora - 4 * 60000).toISOString(),
+        info: { crediti: { cinque_ore: 0.42, sblocco_cinque_ore: new Date(ora + 100 * 60000).toISOString(), settimana: 0.18,
+          sblocco_settimana: new Date(ora + 2 * 86400000).toISOString() } } },
       { id: 'PC-MATTEO', persona: 'Matteo', ultimo_battito: new Date(ora - 9 * 3600000).toISOString() },
+    ],
+    attivi: [
+      { agente: 'animatore', pc: 'PC-ETTORE', da: new Date(ora - 95 * 60000).toISOString(), cosa: 'Richiesta 108: video animato nuovo, dalla storia alla coda' },
+      { agente: 'animatore', pc: 'PC-ETTORE', da: new Date(ora - 12 * 60000).toISOString(), cosa: 'Richiesta 111: «La piscina», esperimento 1' },
+      { agente: 'stratega', pc: 'PC-ETTORE', da: new Date(ora - 2 * 60000).toISOString(), cosa: 'Rifornimento: video nuovi per l\'Animatore' },
     ],
     coda: [
       { titolo: 'NoteGuide-esempio', copertina: null, url: null, uscite: ['instagram', 'tiktok'].map((p) => (
@@ -182,10 +189,13 @@ async function datiVeri(sb) {
       .order('creato_alle', { ascending: false }).limit(60),
     sb.from('metriche_account').select('giorno,metrica,valore').eq('piattaforma', 'instagram')
       .in('metrica', ['visualizzazioni', 'visite_profilo', 'tocchi_link']).gte('giorno', isoGiorno(giorniFa(30))),
+    sb.from('richieste').select('id,agente,per,pc,iniziata_alle,minuti,testo').eq('stato', 'in_corso'),
+    sb.from('turni').select('lavoro,slot,pc,preso_alle').is('finito_alle', null).gt('scade_alle', new Date().toISOString())
+      .like('lavoro', 'agente_%'),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -223,6 +233,7 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
+    attivi: agentiAttivi(inCorso, turniAperti),
     video: video.map((v) => ({ titolo: v.titolo || 'Video senza titolo', stato: v.stato, creato: v.creato_alle,
       copertina: v.anteprima, url: v.note?.url_video,
       uscite: v.pubblicazioni.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.pubblicata_alle || p.programmata_per,
@@ -387,9 +398,38 @@ function paginaOggi(d) {
       <section class="scheda tessera"><div class="etichetta">Video usciti oggi</div><div class="valore">${videoOggi}</div></section>
     </div>
     <div class="griglia">
+      ${schedaAttivi(d)}
       <section class="scheda"><h2>Avvisi aperti</h2><p class="sotto">Dal Guardiano e dagli script</p>${avvisi}</section>
       <section class="scheda"><h2>Ultime decisioni</h2><p class="sotto">Tutte nella pagina Decisioni</p>${elencoDecisioni(d.decisioni.slice(0, 3))}</section>
     </div>`;
+}
+
+// Gli agenti al lavoro adesso (Ettore, 9/11): le richieste in corso (Animatore e Claude in sottofondo) e i giri del
+// calendario o del rifornimento non ancora finiti. Una richiesta oltre il suo tempo non conta: è un giro morto.
+const NOMI_AGENTI = { animatore: 'Animatore', stratega: 'Stratega', analista: 'Analista', ricercatore: 'Ricercatore', community: 'Community manager' };
+function agentiAttivi(inCorso, turniAperti) {
+  const vivi = inCorso.filter((r) => !r.iniziata_alle || Date.now() - new Date(r.iniziata_alle) < ((r.minuti || 60) + 30) * 60000);
+  return [
+    ...vivi.map((r) => ({ agente: r.agente || `claude di ${r.per}`, pc: r.pc, da: r.iniziata_alle,
+      cosa: `Richiesta ${r.id}: ${(r.testo || '').replace(/\s+/g, ' ').slice(0, 90)}` })),
+    ...turniAperti.map((t) => ({ agente: t.lavoro.replace('agente_', ''), pc: t.pc, da: t.preso_alle,
+      cosa: t.slot.startsWith('rif-') ? 'Rifornimento: video nuovi per l\'Animatore' : `Giro del ${t.slot}` })),
+  ].sort((a, b) => String(a.da).localeCompare(String(b.da)));
+}
+
+function schedaAttivi(d) {
+  const persona = Object.fromEntries(d.pc.map((p) => [p.id, p.persona || p.id]));
+  const pct = (v) => (v == null ? '?' : `${Math.round(v * 100)}%`);
+  const ora = (v) => (v ? new Date(v).toLocaleString('it-IT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '?');
+  const crediti = d.pc.filter((p) => p.info?.crediti).map((p) => {
+    const c = p.info.crediti;
+    return `<p class="sotto" style="margin:4px 0">Claude di ${esc(p.persona || p.id)}: sessione di 5 ore al <strong>${pct(c.cinque_ore)}</strong>
+      (si rinnova ${esc(ora(c.sblocco_cinque_ore))}), settimana al ${pct(c.settimana)}. Al 90% la produzione si ferma fino al rinnovo.</p>`;
+  }).join('');
+  const righe = (d.attivi || []).map((a) => [`<b>${esc(NOMI_AGENTI[a.agente] || a.agente)}</b>`, esc(persona[a.pc] || a.pc || '?'),
+    a.da ? fa(a.da) : '–', esc(a.cosa)]);
+  return `<section class="scheda" style="grid-column: 1 / -1"><h2>Agenti al lavoro adesso</h2>${crediti}
+    ${righe.length ? tabella([['Agente'], ['PC di'], ['Partito'], ['Cosa fa']], righe) : '<p class="vuoto">Nessun agente al lavoro in questo momento.</p>'}</section>`;
 }
 
 // Dal video al download, giorno per giorno (9/11): visualizzazioni, visite al profilo e tocchi sul link di Instagram;
