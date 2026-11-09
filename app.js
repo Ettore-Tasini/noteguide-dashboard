@@ -10,7 +10,7 @@ const SCHEDE = [
   { id: 'commenti', nome: 'Commenti' },
   { id: 'trend', nome: 'Trend', fase: 'Arriva con la fase 2: i video virali trovati su TikTok, la loro crescita e i ganci scaricati.' },
   { id: 'strategia', nome: 'Strategia' },
-  { id: 'video', nome: 'Video', fase: 'Arriva con la fase 3: anteprima e stato di ogni video prodotto.' },
+  { id: 'video', nome: 'Video' },
   { id: 'richieste', nome: 'Richieste' },
   { id: 'decisioni', nome: 'Decisioni' },
   { id: 'sistema', nome: 'Sistema' },
@@ -137,6 +137,14 @@ function datiEsempio() {
         { piattaforma: p, stato: 'programmata', quando: new Date(ora + 3 * 3600000).toISOString(),
           didascalia: 'Wait for it… 🚀\n\nWrite it by hand, tap Check and NoteGuide shows you exactly where the mistake is.\n\n#math #noteguide' })) },
     ],
+    video: [
+      { titolo: 'NoteGuide-esempio', stato: 'in_coda', creato: new Date(ora - 5 * 3600000).toISOString(), copertina: null, url: null,
+        uscite: [{ piattaforma: 'instagram', stato: 'programmata', quando: new Date(ora + 3 * 3600000).toISOString(), url: null, vis: null }] },
+      { titolo: 'NoteGuide-razzo', stato: 'uscito', creato: new Date(ora - 3 * 86400000).toISOString(), copertina: null, url: null,
+        uscite: ['instagram', 'tiktok', 'youtube'].map((p, i) => (
+          { piattaforma: p, stato: 'pubblicata', quando: new Date(ora - 2 * 86400000).toISOString(), url: '#', vis: [1400, 320, 85][i] })) },
+      { titolo: 'NoteGuide-meme', stato: 'bocciato', creato: new Date(ora - 4 * 86400000).toISOString(), copertina: null, url: null, uscite: [] },
+    ],
     interruttori: ['tutto', 'pubblicazione', 'risposte', 'dm', 'tiktok'].map((nome) => (
       { nome, attivo: nome !== 'tiktok', motivo: nome === 'tiktok' ? 'captcha' : null, cambiato_alle: new Date(ora - 25 * 60000).toISOString() })),
   };
@@ -163,10 +171,12 @@ async function datiVeri(sb) {
     sb.from('esperimenti').select('*').order('creato_alle', { ascending: false }).limit(100),
     sb.from('lezioni').select('*').order('alle', { ascending: false }).limit(50),
     sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(60),
+    sb.from('video').select('titolo,stato,anteprima,creato_alle,note,pubblicazioni(id,piattaforma,stato,url,programmata_per,pubblicata_alle)')
+      .order('creato_alle', { ascending: false }).limit(60),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -202,6 +212,10 @@ async function datiVeri(sb) {
       paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download) },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
+    video: video.map((v) => ({ titolo: v.titolo || 'Video senza titolo', stato: v.stato, creato: v.creato_alle,
+      copertina: v.anteprima, url: v.note?.url_video,
+      uscite: v.pubblicazioni.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.pubblicata_alle || p.programmata_per,
+        url: p.url, vis: ultimaVista.get(p.id) ?? null })) })),
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
       video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
   };
@@ -506,6 +520,45 @@ function paginaCoda(d) {
   return `<p class="sotto intro-coda">I video programmati: escono da soli all'ora scritta, anche a PC spenti. Il video e la copertina restano qui finché non sono usciti dappertutto.</p>${schede}`;
 }
 
+// I video prodotti, dal più nuovo: la copertina, a che punto sono e come sono andati su ogni social.
+const STATI_VIDEO = { idea: 'Idea', in_lavorazione: 'In lavorazione', in_revisione: 'Da rivedere', bocciato: 'Bocciato',
+  in_coda: 'In coda', uscito: 'Uscito', analizzato: 'Analizzato' };
+const USCITE = { pubblicata: ['bene', 'Uscito'], programmata: ['attenzione', 'Programmato'], in_corso: ['attenzione', 'In caricamento'], errore: ['grave', 'Errore'] };
+
+function paginaVideo(d) {
+  if (!d.video.length) return '<section class="scheda"><h2>Video</h2><p class="vuoto">Nessun video prodotto.</p></section>';
+  const schede = d.video.map((v) => {
+    // Un video resta «in_coda» anche dopo le prime uscite: se è già uscito da qualche parte si dice così.
+    const stato = v.stato === 'in_coda' && v.uscite.some((u) => u.stato === 'pubblicata') ? 'uscito' : v.stato;
+    const colore = { bocciato: 'grave', uscito: 'bene', analizzato: 'bene', in_revisione: 'attenzione' }[stato] || '';
+    const uscite = v.uscite.map((u) => {
+      const [classe, nome] = USCITE[u.stato] || ['', u.stato];
+      const social = u.url ? `<a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(PIATTAFORME[u.piattaforma])}</a>` : esc(PIATTAFORME[u.piattaforma]);
+      return `<li><span class="punto" style="background:${css(u.piattaforma)}"></span><strong>${social}</strong>
+        <span class="stato ${classe}">${nome}</span>${u.quando ? ` ${esc(giorno(u.quando))}` : ''}${u.vis != null ? ` · ${numero(u.vis)} visualizzazioni` : ''}</li>`;
+    }).join('');
+    // La copertina, se è ancora nel bucket; altrimenti un riquadro vuoto (vedi il gestore degli errori delle immagini).
+    const copertina = v.copertina
+      ? `<img class="anteprima-video" src="${esc(v.copertina)}" alt="Copertina di ${esc(v.titolo)}" loading="lazy">`
+      : '<div class="anteprima-video vuoto">Senza copertina</div>';
+    const guarda = v.url && !v.uscite.length ? `<a class="sotto" href="${esc(v.url)}" target="_blank" rel="noopener">Guarda il video</a>` : '';
+    return `<section class="scheda voce-video">${copertina}
+      <div><h2>${esc(v.titolo)}</h2>
+        <p class="sotto"><span class="stato ${colore}">${esc(STATI_VIDEO[stato] || stato)}</span> · fatto il ${esc(giorno(v.creato))}</p>
+        ${uscite ? `<ul class="uscite-video">${uscite}</ul>` : '<p class="vuoto">Non ancora dato ai social.</p>'}${guarda}</div></section>`;
+  }).join('');
+  return `<p class="sotto intro-coda">Gli ultimi ${d.video.length} video prodotti, dal più nuovo. Tocca il nome di un social per aprire il post.</p><div class="griglia-video">${schede}</div>`;
+}
+
+// Le copertine dei video già usciti dappertutto possono non esserci più nel bucket: al posto dell'immagine rotta, il riquadro vuoto.
+document.addEventListener('error', (e) => {
+  if (!e.target.matches?.('img.anteprima-video')) return;
+  const vuoto = document.createElement('div');
+  vuoto.className = 'anteprima-video vuoto';
+  vuoto.textContent = 'Copertina non più disponibile';
+  e.target.replaceWith(vuoto);
+}, true);
+
 // Grassetto, corsivo e codice dentro una riga di markdown, dopo aver tolto l'HTML.
 const mdRiga = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*?)\*/g, '$1<i>$2</i>');
@@ -749,7 +802,7 @@ function mostra(id) {
     main.innerHTML = `<section class="scheda"><h2>${esc(scheda.nome)}</h2><p class="in-arrivo">${esc(scheda.fase)}</p></section>`;
     return;
   }
-  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, esperimenti: paginaEsperimenti, commenti: paginaCommenti, strategia: paginaStrategia, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
+  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, video: paginaVideo, esperimenti: paginaEsperimenti, commenti: paginaCommenti, strategia: paginaStrategia, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
   if (id === 'app') disegnaApp(dati);
   if (id === 'social') disegnaSocial(dati);
   if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);

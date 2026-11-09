@@ -215,4 +215,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .media-coda { grid-template-columns: 1fr 80px; }
 }
 .uscita .quando { font-size: 13px; color: var(--testo-2); }
+
+/* Video: una scheda per video, la copertina (9:16) a sinistra e le uscite sui social a destra */
+.griglia-video { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.voce-video { display: grid; gap: 14px; grid-template-columns: 96px minmax(0, 1fr); align-items: start; margin: 0; }
+.voce-video h2 { margin-top: 0; overflow-wrap: anywhere; }
+.anteprima-video { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; border: 1px solid var(--bordo); display: block; }
+.anteprima-video.vuoto { display: flex; align-items: center; justify-content: center; text-align: center; padding: 6px; box-sizing: border-box; font-size: 12px; color: var(--muto); border-style: dashed; background: var(--pagina); }
+.uscite-video { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.uscite-video li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0; color: var(--testo-2); }
+.uscite-video strong { color: var(--testo); }
 .elenco textarea.bozza { display: block; width: 100%; box-sizing: border-box; margin: 8px 0 6px; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--bordo); background: var(--superficie); color: var(--testo); resize: vertical; }
