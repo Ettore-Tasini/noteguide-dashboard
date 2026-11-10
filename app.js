@@ -164,22 +164,43 @@ function datiEsempio() {
   };
 }
 
+// Supabase dà al massimo 1.000 righe per richiesta. Le tabelle che crescono ogni giorno si leggono a pagine, fino in
+// fondo: il 10/11 le letture dei post erano 1.807 e la pagina si fermava alla millesima, cioè al 7 novembre.
+// `domanda` costruisce la richiesta da capo a ogni pagina, con un ordine che non cambia (la chiave della tabella) e
+// con `count: 'exact'`, che dice quante righe sono in tutto.
+const PAGINA = 1000;
+async function tutte(domanda) {
+  const righe = [];
+  for (;;) {
+    const { data, error, count } = await domanda().range(righe.length, righe.length + PAGINA - 1);
+    if (error) return { data: null, error };
+    righe.push(...data);
+    const finite = count != null ? righe.length >= count : data.length < PAGINA;
+    if (!data.length || finite) return { data: righe, error: null };
+  }
+}
+
 async function datiVeri(sb) {
   const da = isoGiorno(giorniFa(90));
+  const conta = { count: 'exact' };
   const inizioMese = isoGiorno(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)));
   const risposte = await Promise.all([
-    sb.from('metriche_app').select('giorno,store,metrica,dimensione,valore').gte('giorno', da),
+    tutte(() => sb.from('metriche_app').select('giorno,store,metrica,dimensione,valore', conta).gte('giorno', da)
+      .order('giorno').order('store').order('metrica').order('dimensione')),
     sb.from('costi').select('importo').gte('giorno', inizioMese),
-    sb.from('metriche_account').select('giorno,piattaforma,valore').eq('metrica', 'follower').gte('giorno', da).order('giorno'),
-    sb.from('pubblicazioni').select('id,piattaforma,url,pubblicata_alle,didascalia,video(titolo)').eq('stato', 'pubblicata').gte('pubblicata_alle', da),
-    sb.from('metriche_post').select('pubblicazione_id,rilevate_alle,visualizzazioni').gte('rilevate_alle', da).order('rilevate_alle'),
+    tutte(() => sb.from('metriche_account').select('giorno,piattaforma,valore', conta).eq('metrica', 'follower').gte('giorno', da)
+      .order('giorno').order('piattaforma')),
+    tutte(() => sb.from('pubblicazioni').select('id,piattaforma,url,pubblicata_alle,didascalia,video(titolo)', conta)
+      .eq('stato', 'pubblicata').gte('pubblicata_alle', da).order('pubblicata_alle').order('id')),
+    tutte(() => sb.from('metriche_post').select('pubblicazione_id,rilevate_alle,visualizzazioni', conta).gte('rilevate_alle', da)
+      .order('rilevate_alle').order('pubblicazione_id')),
     sb.from('avvisi').select('*').is('risolto_alle', null).order('alle', { ascending: false }).limit(20),
     sb.from('decisioni').select('*').order('alle', { ascending: false }).limit(100),
     sb.from('pc').select('*').order('ultimo_battito', { ascending: false }),
     sb.from('interruttori').select('*').order('nome'),
     sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note)')
       .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
-    sb.from('tasti_app').select('giorno,tasto,quanti').gte('giorno', da).order('giorno'),
+    tutte(() => sb.from('tasti_app').select('giorno,tasto,quanti', conta).gte('giorno', da).order('giorno').order('tasto')),
     sb.from('richieste').select('*').order('creata_alle', { ascending: false }).limit(30),
     sb.from('strategie').select('*').order('alle', { ascending: false }).limit(15),
     sb.from('esperimenti').select('*').order('creato_alle', { ascending: false }).limit(100),
@@ -391,8 +412,9 @@ function paginaOggi(d) {
         <div class="etichetta">Download, ultimo giorno completo${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div>
         <div class="valore">${ultimo ? fmtIntero.format(ultimo.download) : '–'}</div>
         <div class="delta ${delta > 0 ? 'su' : ''}">${delta == null ? 'Servono almeno 8 giorni di dati' : `${delta > 0 ? '+' : ''}${delta}% rispetto alla media dei 7 giorni prima`}</div>
+        <p class="sotto" style="margin:6px 0 0">Apple dà i numeri dell'app dopo circa 2 giorni: questo è il giorno più recente che esiste. Video, visualizzazioni e avvisi sono di adesso.</p>
       </section>
-      <section class="scheda tessera"><div class="etichetta">Utenti attivi</div><div class="valore">${ultimo ? numero(ultimo.dispositivi) : '–'}</div></section>
+      <section class="scheda tessera"><div class="etichetta">Utenti attivi${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div><div class="valore">${ultimo ? numero(ultimo.dispositivi) : '–'}</div></section>
       <section class="scheda tessera"><div class="etichetta">Ricavi netti, 30 giorni</div><div class="valore">${dollari(ricavi30)}</div></section>
       <section class="scheda tessera"><div class="etichetta">Costi del mese</div><div class="valore">${euro(d.costiMese)}</div></section>
       <section class="scheda tessera"><div class="etichetta">Video usciti oggi</div><div class="valore">${videoOggi}</div></section>
@@ -929,6 +951,39 @@ window.addEventListener('hashchange', () => {
 });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => dati && mostra(attiva));
 
+const scrittaAggiornato = (d) => `Aggiornato alle ${d.aggiornato.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+
+// La pagina si rilegge da sola (Ettore, 10/11: «dovrebbe essere sempre aggiornata»): ogni 5 minuti se è in vista, e
+// appena ci si torna dopo averla lasciata aperta. Non lo fa mentre qualcuno sta scrivendo, per non cancellargli il testo.
+const RILEGGI_OGNI_MS = 5 * 60000;
+let rileggendo = false;
+function staScrivendo() {
+  const a = document.activeElement;
+  if (a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)) return true;
+  return [...document.querySelectorAll('#contenuto textarea, #contenuto input[type=password]')].some((c) => c.value !== c.defaultValue);
+}
+async function rileggi() {
+  if (rileggendo || !sb || !dati || dati.esempio || document.hidden || staScrivendo()) return;
+  if (Date.now() - dati.aggiornato.getTime() < RILEGGI_OGNI_MS) return;
+  rileggendo = true;
+  try {
+    const nuovi = await datiVeri(sb);
+    if (staScrivendo()) return;
+    nuovi.email = dati.email;
+    dati = nuovi;
+    const aperti = [...document.querySelectorAll('#contenuto details')].map((x) => x.open);
+    const giu = scrollY;
+    mostra(attiva);
+    document.querySelectorAll('#contenuto details').forEach((x, i) => { if (aperti[i] != null) x.open = aperti[i]; });
+    scrollTo(0, giu);
+    document.getElementById('stato-dati').textContent = scrittaAggiornato(dati);
+  } catch (err) {
+    // Un giro andato male non tocca la pagina: resta l'ora dell'ultima lettura riuscita, e si riprova al prossimo.
+  } finally {
+    rileggendo = false;
+  }
+}
+
 async function avvia() {
   const nav = document.getElementById('schede');
   nav.innerHTML = SCHEDE.map((s) => `<button data-id="${s.id}">${esc(s.nome)}</button>`).join('');
@@ -947,11 +1002,13 @@ async function avvia() {
     try {
       dati = await datiVeri(sb);
       dati.email = session.user.email;
-      pillola.textContent = `Aggiornato alle ${dati.aggiornato.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+      pillola.textContent = scrittaAggiornato(dati);
     } catch (err) {
       document.getElementById('contenuto').innerHTML = `<section class="scheda"><h2>Non riesco a leggere i dati</h2><p class="sotto">${esc(err.message)}</p></section>`;
       return;
     }
+    setInterval(rileggi, 60000);
+    document.addEventListener('visibilitychange', rileggi);
   }
   const iniziale = location.hash.slice(1);
   mostra(SCHEDE.some((s) => s.id === iniziale) ? iniziale : 'oggi');
