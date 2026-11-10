@@ -399,14 +399,14 @@ function paginaOggi(d) {
     </div>
     <div class="griglia">
       ${schedaAttivi(d)}
-      <section class="scheda"><h2>Avvisi aperti</h2><p class="sotto">Dal Guardiano e dagli script</p>${avvisi}</section>
+      <section class="scheda"><h2>Avvisi aperti</h2><p class="sotto">Dal Capo operativo e dagli script</p>${avvisi}</section>
       <section class="scheda"><h2>Ultime decisioni</h2><p class="sotto">Tutte nella pagina Decisioni</p>${elencoDecisioni(d.decisioni.slice(0, 3))}</section>
     </div>`;
 }
 
 // Gli agenti al lavoro adesso (Ettore, 9/11): le richieste in corso (Animatore e Claude in sottofondo) e i giri del
 // calendario o del rifornimento non ancora finiti. Una richiesta oltre il suo tempo non conta: è un giro morto.
-const NOMI_AGENTI = { animatore: 'Animatore', stratega: 'Stratega', analista: 'Analista', ricercatore: 'Ricercatore', community: 'Community manager' };
+const NOMI_AGENTI = { capo: 'Capo operativo', animatore: 'Animatore', stratega: 'Stratega', analista: 'Analista', ricercatore: 'Ricercatore', community: 'Community manager' };
 function agentiAttivi(inCorso, turniAperti) {
   const vivi = inCorso.filter((r) => !r.iniziata_alle || Date.now() - new Date(r.iniziata_alle) < ((r.minuti || 60) + 30) * 60000);
   return [
