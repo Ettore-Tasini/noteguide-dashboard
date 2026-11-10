@@ -104,7 +104,7 @@ function datiEsempio() {
     costiMese: 0,
     strategie: [
       { id: 1, alle: new Date(ora - 40 * 60000).toISOString(), svolta: true, riassunto: 'Apro «Gag dopo l\'app»: Mago tiene il 63% di visione.',
-        testo: '# Strategia di esempio\n\n## In 3 righe\n- Apro un esperimento: **gag dopo l\'app**.\n- Gli animati restano 7 video su 10.\n- Il Ricercatore cerca meme «Prof / Io».' },
+        testo: '# Strategia di esempio\n\n## In 3 righe\n- Apro un esperimento: **gag dopo l\'app**.\n- Gli animati restano il formato di base.\n- Il Ricercatore cerca meme «Prof / Io».' },
     ],
     esperimenti: [
       { id: 2, creato_alle: new Date(ora - 40 * 60000).toISOString(), nome: 'Gag dopo l\'app', formato: 'animato 3D', piattaforma: 'instagram', cosa_cambia: 'storia', stato: 'in_corso',
