@@ -769,7 +769,7 @@ function paginaEsperimenti(d) {
   return `<div class="griglia">
     <section class="scheda"><h2>In corso</h2><p class="sotto">Lo Stratega li apre e li chiude da solo. Se uno è sbagliato, fermatelo.</p>
       ${inCorso.length ? `<ul class="elenco">${inCorso.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
-    <section class="scheda"><h2>Chiusi</h2><p class="sotto">Si giudicano sul punteggio: 70% visualizzazioni × mediana, 30% visione</p>
+    <section class="scheda"><h2>Chiusi</h2><p class="sotto">Si giudicano sul punteggio (40% visualizzazioni, 20% tenuta, 40% interesse: like, commenti, salvati, condivisioni) e sul voto download; se non vanno d'accordo vince il voto download</p>
       ${chiusi.length ? `<ul class="elenco">${chiusi.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
   </div>`;
 }
