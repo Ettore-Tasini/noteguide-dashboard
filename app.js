@@ -1,20 +1,38 @@
-// Dashboard del gestionale: legge il database dopo il login e disegna le pagine.
+// Dashboard del gestionale: legge il database dopo il login e disegna le pagine. È pensata per il telefono.
 // Senza configurazione (config.js vuoto) mostra dati di esempio, e lo dice in alto.
 const PIATTAFORME = { instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube' };
-const SCHEDE = [
-  { id: 'oggi', nome: 'Oggi' },
-  { id: 'app', nome: 'App' },
-  { id: 'social', nome: 'Social' },
-  { id: 'coda', nome: 'In coda per la pubblicazione' },
-  { id: 'esperimenti', nome: 'Esperimenti' },
-  { id: 'commenti', nome: 'Commenti' },
-  { id: 'trend', nome: 'Trend', fase: 'Arriva con la fase 2: i video virali trovati su TikTok, la loro crescita e i ganci scaricati.' },
-  { id: 'strategia', nome: 'Strategia' },
-  { id: 'video', nome: 'Video' },
-  { id: 'richieste', nome: 'Richieste' },
-  { id: 'decisioni', nome: 'Decisioni' },
-  { id: 'sistema', nome: 'Sistema' },
+// Cinque sezioni (Ettore, 11/11: «faccio fatica a trovare quello che cerco»): sul telefono stanno in basso, e ognuna
+// ha dentro le sue pagine. Ogni pagina ha un nome solo suo, e l'indirizzo è #sezione/pagina.
+const SEZIONI = [
+  { id: 'oggi', nome: 'Oggi', icona: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3v4M15.5 3v4"/>', pagine: [['oggi', 'Oggi']] },
+  { id: 'video', nome: 'Video', icona: '<rect x="5.5" y="3" width="13" height="18" rx="2.5"/><path d="M10.5 9.2v5.6l4.6-2.8z"/>',
+    pagine: [['uscite', 'In uscita'], ['fatti', 'Fatti'], ['risultati', 'Come sono andati']] },
+  { id: 'numeri', nome: 'Numeri', icona: '<path d="M3.5 20h17M6.5 20v-7M12 20V5M17.5 20v-10"/>', pagine: [['app', 'App'], ['social', 'Social']] },
+  { id: 'direttore', nome: 'Direttore', icona: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c.8-4.2 3.5-6.3 7-6.3s6.2 2.1 7 6.3"/>',
+    pagine: [['resoconti', 'Resoconti'], ['esperimenti', 'Esperimenti'], ['decisioni', 'Decisioni']] },
+  { id: 'altro', nome: 'Altro', icona: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
+    pagine: [['commenti', 'Commenti'], ['richieste', 'Richieste'], ['sistema', 'Sistema']] },
 ];
+// Gli indirizzi di prima del rifacimento, per chi li ha salvati («Trend» non c'è più: non è mai stata costruita).
+const VECCHIE = { coda: 'uscite', strategia: 'resoconti', trend: 'oggi' };
+const sezioneDi = (pagina) => SEZIONI.find((s) => s.pagine.some(([id]) => id === pagina));
+
+// L'ultima pagina guardata in ogni sezione, ricordata su questo dispositivo: è solo una comodità.
+function ricorda(sezione, pagina) { try { localStorage.setItem(`gestionale.pagina.${sezione}`, pagina); } catch { /* fa niente */ } }
+function ricordata(sezione) {
+  let p = null;
+  try { p = localStorage.getItem(`gestionale.pagina.${sezione.id}`); } catch { /* fa niente */ }
+  return sezione.pagine.some(([id]) => id === p) ? p : sezione.pagine[0][0];
+}
+
+// Da un indirizzo (#video, #video/fatti, #coda…) alla pagina da mostrare.
+function paginaDa(hash) {
+  const [primo, secondo] = hash.replace(/^#/, '').split('/');
+  const sezione = SEZIONI.find((s) => s.id === primo);
+  if (sezione) return sezione.pagine.some(([id]) => id === secondo) ? secondo : ricordata(sezione);
+  const pagina = VECCHIE[primo] || primo;
+  return sezioneDi(pagina) ? pagina : 'oggi';
+}
 
 // Le fonti come le chiama Apple nei report, in italiano come sul sito di App Store Connect.
 const FONTI = { 'App Store search': "Ricerca sull'App Store", 'App Store browse': "Navigazione sull'App Store",
@@ -37,6 +55,10 @@ const css = (nome) => getComputedStyle(document.documentElement).getPropertyValu
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const isoGiorno = (d) => d.toISOString().slice(0, 10);
 const giorniFa = (n) => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() - n); return d; };
+// Il giorno e l'ora come li vede chi guarda (le uscite di «oggi» e «domani» vanno con l'orologio del telefono).
+const giornoQui = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+const oraQui = (d) => new Date(d).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+const fraGiorni = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return giornoQui(d); };
 
 function fa(quando) {
   const minuti = Math.round((Date.now() - new Date(quando)) / 60000);
@@ -103,8 +125,26 @@ function datiEsempio() {
       .map(([tasto, n]) => ({ giorno: isoGiorno(giorniFa(i)), tasto, quanti: Math.round(n * (0.7 + caso() * 0.6)) }))),
     costiMese: 0,
     strategie: [
-      { id: 1, alle: new Date(ora - 40 * 60000).toISOString(), svolta: true, riassunto: 'Apro «Gag dopo l\'app»: Mago tiene il 63% di visione.',
-        testo: '# Strategia di esempio\n\n## In 3 righe\n- Apro un esperimento: **gag dopo l\'app**.\n- Gli animati restano il formato di base.\n- Il Ricercatore cerca meme «Prof / Io».' },
+      { id: 2, alle: new Date(ora - 40 * 60000).toISOString(), svolta: true, pc: 'PC-ETTORE', riassunto: 'Apro «Gag dopo l\'app»: Mago tiene il 63% di visione. Spostati a domani due reel di stasera.',
+        testo: '# Resoconto di esempio\n\n## In 3 righe\n- Apro un esperimento: **gag dopo l\'app**.\n- Gli animati restano il formato di base.\n- Due reel di stasera passano a domani: oggi ne sono già usciti quattro.\n\n## Che cosa ho fatto\n- Chiusi 12 avvisi già risolti.\n- Tre storie di studio in testa alla fila dell\'Animatore.' },
+      { id: 1, alle: new Date(ora - 6 * 3600000).toISOString(), svolta: false, pc: 'PC-ETTORE', riassunto: 'Niente da cambiare: la fila è piena e le uscite di oggi sono a posto.',
+        testo: '# Resoconto di esempio\n\nNiente da cambiare in questo giro.' },
+    ],
+    domande: [
+      { id: 3, alle: new Date(ora - 50 * 60000).toISOString(), per: 'Ettore', stato: 'aperta', testo: 'Il tetto di 20 $ al giorno mi basta per tre giri: ne servirebbe un quarto la sera. Lo alziamo a 25?',
+        perche: 'Il giro delle 22:30 è quello che sistema le uscite del giorno dopo.' },
+    ],
+    quaderno: [{ alle: new Date(ora - 40 * 60000).toISOString(), giro: 'esempio', pc: 'PC-ETTORE',
+      testo: '- Da ricontrollare domani: il voto download di «Mago».\n- La fila dell\'Animatore regge fino a giovedì.' }],
+    fila: [
+      { id: 226, per: 'Chiunque', creata_alle: new Date(ora - 4 * 3600000).toISOString(), testo: 'NUOVO «La verifica di domani»: storia di studio, 25 secondi.' },
+      { id: 227, per: 'Chiunque', creata_alle: new Date(ora - 3 * 3600000).toISOString(), testo: 'NUOVO «Il compagno di banco»: storia di studio con la battuta finale.' },
+      { id: 229, per: 'Chiunque', creata_alle: new Date(ora - 2 * 3600000).toISOString(), testo: 'NUOVO «Guido e la parabola»: Guido spiega dove sta l\'errore.' },
+    ],
+    usciteOggi: [
+      { piattaforma: 'instagram', quando: new Date(ora - 5 * 3600000).toISOString(), titolo: 'NoteGuide-razzo', url: '#' },
+      { piattaforma: 'youtube', quando: new Date(ora - 5 * 3600000).toISOString(), titolo: 'NoteGuide-razzo', url: '#' },
+      { piattaforma: 'instagram', quando: new Date(ora - 2 * 3600000).toISOString(), titolo: 'NoteGuide-torta', url: '#' },
     ],
     esperimenti: [
       { id: 2, creato_alle: new Date(ora - 40 * 60000).toISOString(), nome: 'Gag dopo l\'app', formato: 'animato 3D', piattaforma: 'instagram', cosa_cambia: 'storia', stato: 'in_corso',
@@ -131,9 +171,10 @@ function datiEsempio() {
       { alle: new Date(ora - 5 * 3600000).toISOString(), livello: 'attenzione', fonte: 'instagram', messaggio: 'La chiave scade fra 6 giorni: il rinnovo automatico non è riuscito.' },
     ],
     decisioni: [
-      { alle: new Date(ora - 2 * 3600000).toISOString(), agente: 'Direttore', decisione: 'Questa settimana si provano le aree tematiche.', motivo: 'Mancano dati sulle aree: è la variabile con più incertezza.' },
-      { alle: new Date(ora - 26 * 3600000).toISOString(), agente: 'Programmatore', decisione: 'Instagram alle 13 e alle 19.', motivo: 'Sono le ore in cui negli ultimi 14 giorni un PC era acceso.' },
-      { alle: new Date(ora - 50 * 3600000).toISOString(), agente: 'Revisore', decisione: 'Bocciato un video: testo con «illimitato».', motivo: "L'AI gratuita ha 15 usi al giorno." },
+      { alle: new Date(ora - 40 * 60000).toISOString(), agente: 'direttore', decisione: 'Due reel di stasera spostati a domani.', motivo: 'Oggi su Instagram ne sono già usciti quattro: gli ultimi della giornata prendono meno visualizzazioni.' },
+      { alle: new Date(ora - 2 * 3600000).toISOString(), agente: 'direttore', decisione: 'Questa settimana si provano le storie di studio.', motivo: 'Mancano dati sul formato: è la cosa su cui si sa di meno.' },
+      { alle: new Date(ora - 26 * 3600000).toISOString(), agente: 'programmatore', decisione: 'Instagram alle 13 e alle 19.', motivo: 'Sono le ore in cui negli ultimi 14 giorni un PC era acceso.' },
+      { alle: new Date(ora - 50 * 3600000).toISOString(), agente: 'revisore', decisione: 'Bocciato un video: testo con «illimitato».', motivo: "L'AI gratuita ha 15 usi al giorno." },
     ],
     pc: [
       { id: 'PC-ETTORE', persona: 'Ettore', ultimo_battito: new Date(ora - 4 * 60000).toISOString(),
@@ -144,13 +185,13 @@ function datiEsempio() {
     attivi: [
       { agente: 'animatore', pc: 'PC-ETTORE', da: new Date(ora - 95 * 60000).toISOString(), cosa: 'Richiesta 108: video animato nuovo, dalla storia alla coda' },
       { agente: 'animatore', pc: 'PC-ETTORE', da: new Date(ora - 12 * 60000).toISOString(), cosa: 'Richiesta 111: «La piscina», esperimento 1' },
-      { agente: 'stratega', pc: 'PC-ETTORE', da: new Date(ora - 2 * 60000).toISOString(), cosa: 'Rifornimento: video nuovi per l\'Animatore' },
+      { agente: 'direttore', pc: 'PC-ETTORE', da: new Date(ora - 2 * 60000).toISOString(), cosa: 'Giro delle 16:50' },
     ],
-    coda: [
-      { titolo: 'NoteGuide-esempio', copertina: null, url: null, uscite: ['instagram', 'tiktok'].map((p) => (
-        { piattaforma: p, stato: 'programmata', quando: new Date(ora + 3 * 3600000).toISOString(),
-          didascalia: 'Wait for it… 🚀\n\nWrite it by hand, tap Check and NoteGuide shows you exactly where the mistake is.\n\n#math #noteguide' })) },
-    ],
+    coda: [['NoteGuide-esempio', 1.5, ['instagram', 'youtube']], ['NoteGuide-esempio', 3, ['tiktok']], ['NoteGuide-ponte', 20, ['instagram', 'youtube']],
+      ['NoteGuide-mago', 26, ['instagram']]].map(([titolo, fraOre, social]) => (
+      { titolo, copertina: null, url: null, uscite: social.map((p) => (
+        { piattaforma: p, stato: 'programmata', quando: new Date(ora + fraOre * 3600000).toISOString(),
+          didascalia: 'Wait for it… 🚀\n\nWrite it by hand, tap Check and NoteGuide shows you exactly where the mistake is.\n\n#math #noteguide' })) })),
     video: [
       { titolo: 'NoteGuide-esempio', stato: 'in_coda', creato: new Date(ora - 5 * 3600000).toISOString(), copertina: null, url: null,
         uscite: [{ piattaforma: 'instagram', stato: 'programmata', quando: new Date(ora + 3 * 3600000).toISOString(), url: null, vis: null }] },
@@ -159,7 +200,7 @@ function datiEsempio() {
           { piattaforma: p, stato: 'pubblicata', quando: new Date(ora - 2 * 86400000).toISOString(), url: '#', vis: [1400, 320, 85][i] })) },
       { titolo: 'NoteGuide-meme', stato: 'bocciato', creato: new Date(ora - 4 * 86400000).toISOString(), copertina: null, url: null, uscite: [] },
     ],
-    interruttori: ['tutto', 'pubblicazione', 'risposte', 'dm', 'tiktok'].map((nome) => (
+    interruttori: ['direttore', 'tutto', 'pubblicazione', 'risposte', 'dm', 'tiktok'].map((nome) => (
       { nome, attivo: nome !== 'tiktok', motivo: nome === 'tiktok' ? 'captcha' : null, cambiato_alle: new Date(ora - 25 * 60000).toISOString() })),
   };
 }
@@ -194,7 +235,7 @@ async function datiVeri(sb) {
       .eq('stato', 'pubblicata').gte('pubblicata_alle', da).order('pubblicata_alle').order('id')),
     tutte(() => sb.from('metriche_post').select('pubblicazione_id,rilevate_alle,visualizzazioni', conta).gte('rilevate_alle', da)
       .order('rilevate_alle').order('pubblicazione_id')),
-    sb.from('avvisi').select('*').is('risolto_alle', null).order('alle', { ascending: false }).limit(20),
+    sb.from('avvisi').select('*').is('risolto_alle', null).order('alle', { ascending: false }).limit(60),
     sb.from('decisioni').select('*').order('alle', { ascending: false }).limit(100),
     sb.from('pc').select('*').order('ultimo_battito', { ascending: false }),
     sb.from('interruttori').select('*').order('nome'),
@@ -213,10 +254,15 @@ async function datiVeri(sb) {
     sb.from('richieste').select('id,agente,per,pc,iniziata_alle,minuti,testo').eq('stato', 'in_corso'),
     sb.from('turni').select('lavoro,slot,pc,preso_alle').is('finito_alle', null).gt('scade_alle', new Date().toISOString())
       .like('lavoro', 'agente_%'),
+    // Il Direttore: le domande ancora aperte, l'ultima pagina del suo quaderno e la fila dell'Animatore (va per
+    // `creata_alle`, come la prende il gestionale).
+    sb.from('domande').select('*').eq('stato', 'aperta').order('alle'),
+    sb.from('quaderno').select('*').order('alle', { ascending: false }).limit(1),
+    sb.from('richieste').select('id,per,testo,creata_alle').eq('stato', 'nuova').eq('agente', 'animatore').order('creata_alle').limit(30),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -254,6 +300,10 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
+    domande, quaderno, fila,
+    // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
+    usciteOggi: pubblicazioni.filter((p) => giornoQui(p.pubblicata_alle) === giornoQui(new Date())).map((p) => ({ piattaforma: p.piattaforma,
+      quando: p.pubblicata_alle, url: p.url, titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo' })),
     attivi: agentiAttivi(inCorso, turniAperti),
     video: video.map((v) => ({ titolo: v.titolo || 'Video senza titolo', stato: v.stato, creato: v.creato_alle,
       copertina: v.anteprima, url: v.note?.url_video,
@@ -283,7 +333,7 @@ const grafici = new Set();
 function base() {
   return {
     animation: false,
-    textStyle: { fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif' },
+    textStyle: { fontFamily: '"Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif' },
     tooltip: { backgroundColor: css('superficie'), borderColor: css('bordo'), textStyle: { color: css('testo'), fontSize: 13 } },
     xAxis: { axisLine: { lineStyle: { color: css('asse') } }, axisTick: { show: false }, axisLabel: { color: css('muto'), hideOverlap: true }, splitLine: { show: false } },
     yAxis: { axisLine: { show: false }, axisLabel: { color: css('muto') }, splitLine: { lineStyle: { color: css('griglia'), width: 1 } } },
@@ -393,42 +443,168 @@ function statoAvviso(livello) {
   return `<span class="stato ${livello === 'info' ? 'bene' : esc(livello)}">${esc(nome)}</span>`;
 }
 
-function paginaOggi(d) {
+// ------------------------------------------------------------- Oggi
+// La pagina che si apre per prima, pensata per il telefono (Ettore, 11/11): in cima quello che c'è da guardare, poi
+// che cosa esce oggi e domani, che cosa ha fatto il Direttore, chi sta lavorando e i numeri.
+
+// Domande aperte del Direttore e avvisi: prima le domande, poi i gravi, poi il resto. Le prime cinque in vista.
+function daGuardare(d) {
+  const domande = (d.domande || []).map((q) => `<li><span class="tipo">Domanda${q.per && q.per !== 'tutti' ? ` per ${esc(q.per)}` : ''}</span><span class="quando">${fa(q.alle)}</span>`
+    + `<div>${mdRiga(q.testo)}</div>${q.perche ? `<div class="motivo">${mdRiga(q.perche)}</div>` : ''}`
+    + '<div class="quando">Si risponde dalla chat con Claude, non da qui.</div></li>');
+  const peso = { grave: 0, attenzione: 1 };
+  const nome = { grave: 'Grave', attenzione: 'Attenzione', info: 'Nota' };
+  const avvisi = [...d.avvisi].sort((a, b) => (peso[a.livello] ?? 2) - (peso[b.livello] ?? 2))
+    .map((a) => `<li><span class="tipo${a.livello === 'grave' ? '' : ' attenzione'}">${esc(nome[a.livello] || a.livello)}</span><b>${esc(PIATTAFORME[a.fonte] || a.fonte || '')}</b> `
+      + `<span class="quando">${fa(a.alle)}</span><div>${esc(a.messaggio)}</div></li>`);
+  const voci = [...domande, ...avvisi];
+  if (!voci.length) {
+    return '<section class="margine pulito"><h2>Niente da guardare</h2><p class="vuoto">Nessuna domanda del Direttore e nessun avviso aperto.</p></section>';
+  }
+  const gravi = d.avvisi.filter((a) => a.livello === 'grave').length;
+  const titolo = domande.length || gravi ? 'Da guardare' : 'Avvisi aperti';
+  const resto = voci.slice(5);
+  return `<section class="margine${domande.length || gravi ? '' : ' quieto'}"><h2>${titolo}</h2><ul>${voci.slice(0, 5).join('')}</ul>`
+    + (resto.length ? `<details><summary>Altri ${resto.length}</summary><ul>${resto.join('')}</ul></details>` : '') + '</section>';
+}
+
+// Le uscite di un giorno in ordine d'ora. Lo stesso video alla stessa ora su più social sta su una riga sola.
+function elencoUscite(uscite) {
+  const gruppi = new Map();
+  for (const u of [...uscite].sort((a, b) => new Date(a.quando) - new Date(b.quando))) {
+    const k = `${oraQui(u.quando)}|${u.titolo}|${u.fatta ? 1 : 0}`;
+    if (!gruppi.has(k)) gruppi.set(k, { ...u, social: [] });
+    gruppi.get(k).social.push(u);
+  }
+  return `<ul class="uscite-giorno">${[...gruppi.values()].map((g) => {
+    const social = g.social.map((u) => `<span><span class="punto" style="background:${css(u.piattaforma)}"></span>`
+      + (u.url ? `<a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(PIATTAFORME[u.piattaforma])}</a>` : esc(PIATTAFORME[u.piattaforma] || u.piattaforma)) + '</span>').join('');
+    const stato = g.fatta ? '<span>uscito</span>' : g.stato === 'in_corso' ? '<span>in caricamento</span>' : '';
+    return `<li${g.fatta ? ' class="fatta"' : ''}><time>${oraQui(g.quando)}</time><div><span class="titolo">${esc(g.titolo)}</span><span class="dove">${social}${stato}</span></div></li>`;
+  }).join('')}</ul>`;
+}
+
+function bloccoUscite(d) {
+  const oggi = giornoQui(new Date());
+  const domani = fraGiorni(1);
+  const programmate = d.coda.flatMap((v) => v.uscite.filter((u) => u.quando).map((u) => ({ ...u, titolo: v.titolo })));
+  const diOggi = [...(d.usciteOggi || []).map((u) => ({ ...u, fatta: true })), ...programmate.filter((u) => giornoQui(u.quando) === oggi)];
+  const diDomani = programmate.filter((u) => giornoQui(u.quando) === domani);
+  const dopo = programmate.filter((u) => giornoQui(u.quando) > domani).sort((a, b) => new Date(a.quando) - new Date(b.quando));
+  let dentro = '';
+  if (diOggi.length) dentro += `<p class="nome-giorno">Oggi</p>${elencoUscite(diOggi)}`;
+  if (diDomani.length) dentro += `<p class="nome-giorno">Domani</p>${elencoUscite(diDomani)}`;
+  if (!dentro) {
+    dentro = `<p class="vuoto">Niente in programma per oggi e domani.${dopo.length ? ` La prossima uscita è ${esc(ora(dopo[0].quando))}.` : ''}</p>`;
+  } else if (dopo.length) {
+    dentro += `<p class="quando" style="margin:8px 0 0">Poi altre ${dopo.length} nei giorni dopo.</p>`;
+  }
+  return `<section class="blocco"><div class="blocco-testa"><h2>In uscita</h2><a href="#video/uscite">Tutte, con le descrizioni</a></div>
+    <div class="scheda">${dentro}</div></section>`;
+}
+
+// Chi decide: il Direttore se il suo interruttore è acceso, altrimenti tornano Stratega, Analista e Ricercatore.
+const direttoreAcceso = (d) => d.interruttori.find((i) => i.nome === 'direttore')?.attivo === true;
+
+function bloccoDirettore(d) {
+  const acceso = direttoreAcceso(d);
+  const ultimo = d.strategie[0];
+  const sue = d.decisioni.filter((x) => ['direttore', 'stratega'].includes(String(x.agente).toLowerCase())).slice(0, 3);
+  const stato = `<span class="stato ${acceso ? 'bene' : 'attenzione'}">${acceso ? 'Acceso' : 'Spento'}</span>`;
+  const giro = ultimo
+    ? `<p class="sotto">${stato} · ultimo giro ${fa(ultimo.alle)}</p><div>${mdRiga(ultimo.riassunto || 'Giro senza riassunto.')}</div>
+       <details class="resoconto"><summary>Leggi il resoconto intero</summary>${markdown(ultimo.testo || '')}</details>`
+    : `<p class="sotto">${stato}</p><p class="vuoto">Ancora nessun giro.</p>`;
+  const decisioni = sue.length ? `<ul class="elenco" style="margin-top:6px;border-top:1px solid var(--griglia)">${sue.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span></li>`).join('')}</ul>` : '';
+  return `<section class="blocco"><div class="blocco-testa"><h2>Il Direttore</h2><a href="#direttore/resoconti">Tutti i resoconti</a></div>
+    <div class="scheda">${giro}${acceso ? '' : '<p class="sotto" style="margin:8px 0 0">Da spento decidono Stratega, Analista e Ricercatore.</p>'}${decisioni}</div></section>`;
+}
+
+// Gli agenti al lavoro adesso, la fila dell'Animatore e il credito di Claude su ogni PC.
+function bloccoLavoro(d) {
+  const persona = Object.fromEntries(d.pc.map((p) => [p.id, p.persona || p.id]));
+  const attivi = (d.attivi || []).map((a) => `<li><b>${esc(nomeAgente(a.agente))}</b> <span class="quando">PC di ${esc(persona[a.pc] || a.pc || '?')}${a.da ? ` · partito ${fa(a.da)}` : ''}</span>`
+    + `<div class="cosa">${esc(a.cosa)}</div></li>`).join('');
+  const fila = d.fila || [];
+  const inFila = fila.length
+    ? `<details class="resoconto"><summary>In fila per l'Animatore: ${fila.length} ${fila.length === 1 ? 'video' : 'video'}</summary><ol>${fila.map((r) => `<li>${esc((r.testo || '').replace(/\s+/g, ' ').slice(0, 130))} <span class="quando">richiesta ${r.id}</span></li>`).join('')}</ol></details>`
+    : '<p class="sotto" style="margin:8px 0 0">Nessun video in fila per l\'Animatore.</p>';
+  const pct = (v) => (v == null ? '?' : `${Math.round(v * 100)}%`);
+  const quando = (v) => (v ? new Date(v).toLocaleString('it-IT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '?');
+  const metro = (nome, v, sblocco) => `<div class="metro"><div class="riga"><span>${esc(nome)}${sblocco ? `, si rinnova ${esc(quando(sblocco))}` : ''}</span><strong>${pct(v)}</strong></div>
+    <div class="barretta"><i${v >= 0.9 ? ' class="pieno"' : ''} style="width:${Math.min(100, Math.round((v || 0) * 100))}%"></i></div></div>`;
+  const metri = d.pc.filter((p) => p.info?.crediti).map((p) => {
+    const c = p.info.crediti;
+    return metro(`Claude di ${p.persona || p.id}: sessione`, c.cinque_ore, c.sblocco_cinque_ore) + metro(`Claude di ${p.persona || p.id}: settimana`, c.settimana, c.sblocco_settimana)
+      + (c.ritmo ? `<p class="quando" style="margin:0">${esc(c.ritmo)}</p>` : '');
+  }).join('');
+  return `<section class="blocco"><div class="blocco-testa"><h2>Al lavoro adesso</h2><a href="#video/fatti">I video fatti</a></div>
+    <div class="scheda">${attivi ? `<ul class="al-lavoro">${attivi}</ul>` : '<p class="vuoto">Nessun agente al lavoro in questo momento.</p>'}
+      ${inFila}${metri ? `<div class="metri">${metri}</div>` : ''}</div></section>`;
+}
+
+// Una riga sola di grafico, senza assi: l'andamento degli ultimi giorni di fianco al numero.
+function scintilla(valori) {
+  if (valori.length < 2) return '';
+  const max = Math.max(...valori, 1);
+  const x = (i) => (i / (valori.length - 1)) * 116 + 2;
+  const y = (v) => 40 - (v / max) * 36;
+  const punti = valori.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  return `<svg class="scintilla" viewBox="0 0 120 44" role="img" aria-label="Download degli ultimi ${valori.length} giorni"><path d="${punti}"/>`
+    + `<circle cx="${x(valori.length - 1).toFixed(1)}" cy="${y(valori.at(-1)).toFixed(1)}" r="3"/></svg>`;
+}
+
+function bloccoNumeri(d) {
   const giorni = d.app.giorni;
   const ultimo = giorni.at(-1);
   const prima = giorni.slice(-8, -1);
   const media = prima.length ? prima.reduce((s, g) => s + g.download, 0) / prima.length : null;
   const delta = ultimo && media ? Math.round(((ultimo.download - media) / media) * 100) : null;
-  const ricavi30 = giorni.slice(-30).reduce((s, g) => s + g.ricavi, 0);
-  const oggi = isoGiorno(new Date());
-  const videoOggi = d.post.filter((p) => p.data === oggi).length;
-  const avvisi = d.avvisi.length
-    ? `<ul class="elenco">${d.avvisi.map((a) => `<li>${statoAvviso(a.livello)} <b>${esc(PIATTAFORME[a.fonte] || a.fonte)}</b> <span class="quando">${fa(a.alle)}</span><div>${esc(a.messaggio)}</div></li>`).join('')}</ul>`
-    : '<p class="vuoto">Nessun avviso aperto.</p>';
+  const da7 = isoGiorno(giorniFa(7));
+  const recenti = d.post.filter((p) => p.data >= da7);
+  const vis7 = recenti.reduce((s, p) => s + p.vis, 0);
+  const follower = Object.entries(PIATTAFORME).filter(([p]) => d.follower[p]?.length).map(([p, nome]) => {
+    const punti = d.follower[p];
+    const cresce = punti.length > 7 ? punti.at(-1)[1] - punti.at(-8)[1] : null;
+    return `<li><span><span class="punto" style="background:${css(p)}"></span>${esc(nome)}</span><span><strong>${fmtIntero.format(punti.at(-1)[1])}</strong>`
+      + `${cresce == null ? '' : ` <span class="quando">${cresce >= 0 ? '+' : ''}${fmtIntero.format(cresce)}</span>`}</span></li>`;
+  }).join('');
+  return `<section class="blocco"><div class="blocco-testa"><h2>Numeri</h2><a href="#numeri/app">Tutti i numeri</a></div>
+    <div class="numeri-oggi">
+      <div class="scheda grande"><div>
+          <div class="etichetta">Download${ultimo ? ` del ${giorno(ultimo.giorno)}` : ''}</div>
+          <div class="valore">${ultimo ? fmtIntero.format(ultimo.download) : '–'}</div>
+          <div class="delta ${delta > 0 ? 'su' : ''}">${delta == null ? 'Servono almeno 8 giorni di dati' : `${delta > 0 ? '+' : ''}${delta}% sulla media dei 7 giorni prima`}</div>
+        </div>${scintilla(giorni.slice(-14).map((g) => g.download))}
+        <p class="quando" style="grid-column:1 / -1;margin:0">Apple dà i download dopo circa 2 giorni: questo è l'ultimo giorno che esiste.</p></div>
+      <div class="scheda"><div class="etichetta">Visualizzazioni dei video usciti negli ultimi 7 giorni</div><div class="valore">${numero(vis7)}</div>
+        <div class="delta">${recenti.length} uscite</div></div>
+      <div class="scheda"><div class="etichetta">Follower, e quanti in più in 7 giorni</div>${follower ? `<ul class="follower-oggi">${follower}</ul>` : '<p class="vuoto">Ancora nessun numero.</p>'}</div>
+    </div></section>`;
+}
+
+function paginaOggi(d) {
+  const adesso = new Date();
+  const data = adesso.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+  const oggi = giornoQui(adesso);
+  const fatte = (d.usciteOggi || []).length;
+  const daFare = d.coda.reduce((s, v) => s + v.uscite.filter((u) => u.quando && giornoQui(u.quando) === oggi).length, 0);
+  const domani = d.coda.reduce((s, v) => s + v.uscite.filter((u) => u.quando && giornoQui(u.quando) === fraGiorni(1)).length, 0);
+  const conto = (n, una, tante) => `${n} ${n === 1 ? una : tante}`;
   return `
-    ${d.esempio ? '<p class="vuoto">Questi sono dati di esempio: il database non è ancora collegato.</p>' : ''}
-    <div class="tessere">
-      <section class="scheda eroe" style="grid-column: 1 / -1">
-        <div class="etichetta">Download, ultimo giorno completo${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div>
-        <div class="valore">${ultimo ? fmtIntero.format(ultimo.download) : '–'}</div>
-        <div class="delta ${delta > 0 ? 'su' : ''}">${delta == null ? 'Servono almeno 8 giorni di dati' : `${delta > 0 ? '+' : ''}${delta}% rispetto alla media dei 7 giorni prima`}</div>
-        <p class="sotto" style="margin:6px 0 0">Apple dà i numeri dell'app dopo circa 2 giorni: questo è il giorno più recente che esiste. Video, visualizzazioni e avvisi sono di adesso.</p>
-      </section>
-      <section class="scheda tessera"><div class="etichetta">Utenti attivi${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div><div class="valore">${ultimo ? numero(ultimo.dispositivi) : '–'}</div></section>
-      <section class="scheda tessera"><div class="etichetta">Ricavi netti, 30 giorni</div><div class="valore">${dollari(ricavi30)}</div></section>
-      <section class="scheda tessera"><div class="etichetta">Costi del mese</div><div class="valore">${euro(d.costiMese)}</div></section>
-      <section class="scheda tessera"><div class="etichetta">Video usciti oggi</div><div class="valore">${videoOggi}</div></section>
-    </div>
-    <div class="griglia">
-      ${schedaAttivi(d)}
-      <section class="scheda"><h2>Avvisi aperti</h2><p class="sotto">Dal Capo operativo e dagli script</p>${avvisi}</section>
-      <section class="scheda"><h2>Ultime decisioni</h2><p class="sotto">Tutte nella pagina Decisioni</p>${elencoDecisioni(d.decisioni.slice(0, 3))}</section>
+    <header class="data-oggi"><h1>${esc(data[0].toUpperCase() + data.slice(1))}</h1>
+      <p>${d.esempio ? 'Dati di esempio: il database non è collegato. ' : ''}Oggi ${conto(fatte, 'uscita fatta', 'uscite fatte')} e ${daFare} ancora da fare. Domani ${domani}.</p></header>
+    <div class="oggi-colonne">
+      <div>${daGuardare(d)}${bloccoUscite(d)}${bloccoDirettore(d)}</div>
+      <div>${bloccoLavoro(d)}${bloccoNumeri(d)}</div>
     </div>`;
 }
 
 // Gli agenti al lavoro adesso (Ettore, 9/11): le richieste in corso (Animatore e Claude in sottofondo) e i giri del
 // calendario o del rifornimento non ancora finiti. Una richiesta oltre il suo tempo non conta: è un giro morto.
-const NOMI_AGENTI = { capo: 'Capo operativo', animatore: 'Animatore', stratega: 'Stratega', analista: 'Analista', ricercatore: 'Ricercatore', community: 'Community manager' };
+const NOMI_AGENTI = { direttore: 'Direttore', capo: 'Capo operativo', animatore: 'Animatore', stratega: 'Stratega', analista: 'Analista', ricercatore: 'Ricercatore',
+  community: 'Community manager', programmatore: 'Programmatore', revisore: 'Revisore', supervisore: 'Supervisore' };
+const nomeAgente = (a) => NOMI_AGENTI[String(a).toLowerCase()] || (a ? String(a)[0].toUpperCase() + String(a).slice(1) : '?');
 function agentiAttivi(inCorso, turniAperti) {
   const vivi = inCorso.filter((r) => !r.iniziata_alle || Date.now() - new Date(r.iniziata_alle) < ((r.minuti || 60) + 30) * 60000);
   return [
@@ -437,21 +613,6 @@ function agentiAttivi(inCorso, turniAperti) {
     ...turniAperti.map((t) => ({ agente: t.lavoro.replace('agente_', ''), pc: t.pc, da: t.preso_alle,
       cosa: t.slot.startsWith('rif-') ? 'Rifornimento: video nuovi per l\'Animatore' : `Giro del ${t.slot}` })),
   ].sort((a, b) => String(a.da).localeCompare(String(b.da)));
-}
-
-function schedaAttivi(d) {
-  const persona = Object.fromEntries(d.pc.map((p) => [p.id, p.persona || p.id]));
-  const pct = (v) => (v == null ? '?' : `${Math.round(v * 100)}%`);
-  const ora = (v) => (v ? new Date(v).toLocaleString('it-IT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '?');
-  const crediti = d.pc.filter((p) => p.info?.crediti).map((p) => {
-    const c = p.info.crediti;
-    return `<p class="sotto" style="margin:4px 0">Claude di ${esc(p.persona || p.id)}: sessione di 5 ore al <strong>${pct(c.cinque_ore)}</strong>
-      (si rinnova ${esc(ora(c.sblocco_cinque_ore))}), settimana al ${pct(c.settimana)}. ${esc(c.ritmo || '')}</p>`;
-  }).join('');
-  const righe = (d.attivi || []).map((a) => [`<b>${esc(NOMI_AGENTI[a.agente] || a.agente)}</b>`, esc(persona[a.pc] || a.pc || '?'),
-    a.da ? fa(a.da) : '–', esc(a.cosa)]);
-  return `<section class="scheda" style="grid-column: 1 / -1"><h2>Agenti al lavoro adesso</h2>${crediti}
-    ${righe.length ? tabella([['Agente'], ['PC di'], ['Partito'], ['Cosa fa']], righe) : '<p class="vuoto">Nessun agente al lavoro in questo momento.</p>'}</section>`;
 }
 
 // Dal video al download, giorno per giorno (9/11): visualizzazioni, visite al profilo e tocchi sul link di Instagram;
@@ -526,10 +687,15 @@ function schedaStima(st) {
 }
 
 function paginaApp(d) {
-  return `<div class="tessere">${schedaStima(stimaSocial(d))}</div><div class="griglia">
+  const ultimo = d.app.giorni.at(-1);
+  const ricavi30 = d.app.giorni.slice(-30).reduce((s, g) => s + g.ricavi, 0);
+  return `<div class="tessere">${schedaStima(stimaSocial(d))}
+      <section class="scheda tessera"><div class="etichetta">Utenti attivi${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div><div class="valore">${ultimo ? numero(ultimo.dispositivi) : '–'}</div></section>
+      <section class="scheda tessera"><div class="etichetta">Ricavi netti, 30 giorni</div><div class="valore">${dollari(ricavi30)}</div></section>
+      <section class="scheda tessera"><div class="etichetta">Costi del mese</div><div class="valore">${euro(d.costiMese)}</div></section>
+    </div><div class="griglia">
     ${schedaGrafico('imbuto', 'Dal video al download', 'Per giorno. Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download. I numeri di Apple arrivano dopo circa 2 giorni', righeImbuto(ogniMille(d.app.imbuto || [])))}
     ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store. Tratteggio: la media prima dei social; zona grigia: da quando escono i video')}
-    ${schedaGrafico('visual', 'Visualizzazioni dei video', 'Per giorno di uscita, tutti i social, ultimi numeri letti', legenda(Object.entries(PIATTAFORME).map(([p, nome]) => [nome, css(p)])))}
     ${schedaGrafico('attivi', 'Utenti attivi', 'Dispositivi che hanno aperto l\'app, per giorno')}
     ${schedaGrafico('ricavi', 'Ricavi netti per settimana', 'Acquisti di crediti al netto della quota di Apple, in dollari come li dà Apple')}
     ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni: per campagna se i link nelle bio la indicano, altrimenti per fonte')}
@@ -554,14 +720,8 @@ function disegnaApp(d) {
     markLine: { silent: true, symbol: 'none', lineStyle: { color: css('asse'), type: 'dashed' },
       label: { formatter: 'media prima', color: css('muto'), position: 'insideStartTop' }, data: [{ yAxis: +st.media.toFixed(1) }] },
     markArea: { silent: true, itemStyle: { color: css('griglia') }, data: [[{ xAxis: st.inizio }, { xAxis: g.at(-1).giorno }]] } } : undefined }]);
-  const giorniVideo = [...new Set(d.post.map((p) => p.data))].sort();
-  const visual = Object.entries(PIATTAFORME).map(([p, nome]) => ({ nome, colore: css(p),
-    valori: giorniVideo.map((gv) => d.post.filter((x) => x.piattaforma === p && x.data === gv).reduce((s, x) => s + x.vis, 0)) }));
-  pile(document.getElementById('g-visual'), giorniVideo, visual);
   const paesi = d.app.paesi.slice(0, 8);
   colonne(document.getElementById('g-paesi'), paesi.map((x) => x.paese), paesi.map((x) => x.download), colore, numero, true);
-  tabelle.visual = () => tabella([['Giorno'], ...visual.map((v) => [v.nome, 1])],
-    giorniVideo.map((gv, i) => [giorno(gv), ...visual.map((v) => fmtIntero.format(v.valori[i]))]));
   const totTasti = Object.entries(TASTI).map(([k, nome]) => [nome, d.tasti.filter((x) => x.tasto === k).reduce((s, x) => s + x.quanti, 0)])
     .sort((a, b) => b[1] - a[1]);
   colonne(document.getElementById('g-tasti'), totTasti.map((x) => x[0]), totTasti.map((x) => x[1]), colore, numero, true);
@@ -594,41 +754,58 @@ function conPunteggi(post) {
   return post.map((x) => ({ ...x, punteggio: mediane[x.piattaforma] ? Math.max(x.vis, 1) / mediane[x.piattaforma] : null }));
 }
 
-function paginaSocial(d) {
+// Come sono andati i video: ognuno rispetto al solito della sua piattaforma, e l'elenco degli ultimi usciti.
+function paginaRisultati(d) {
   const voci = Object.entries(PIATTAFORME).map(([p, nome]) => [nome, css(p)]);
   const post = conPunteggi(d.post).sort((a, b) => b.data.localeCompare(a.data));
-  const righe = post.slice(0, 15).map((x) => [
+  const righe = post.slice(0, 30).map((x) => [
     `${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.titolo)}</a>` : esc(x.titolo)}`
-      + `<div class="quando"><span class="punto" style="background:${css(x.piattaforma)}"></span>${esc(PIATTAFORME[x.piattaforma])} · ${giorno(x.data)}</div>`,
+      + `<div class="quando"><span class="punto" style="background:${css(x.piattaforma)}"></span>${esc(PIATTAFORME[x.piattaforma])}, ${giorno(x.data)}</div>`,
     fmtIntero.format(x.vis), x.punteggio == null ? '–' : `${x.punteggio.toFixed(1).replace('.', ',')}×`]);
   return `<div class="griglia">
-    ${schedaGrafico('follower', 'Follower', 'Per piattaforma, ultimi 30 giorni', legenda(voci))}
     ${schedaGrafico('punteggi', 'Ogni video rispetto alla sua piattaforma', 'Visualizzazioni divise per la mediana dell\'account: 2× vuol dire il doppio del solito', legenda(voci))}
-  </div>
-  <section class="scheda" style="margin-top:12px"><h2>Video usciti</h2><p class="sotto">I più recenti, con il punteggio rispetto alla mediana</p>
-    ${post.length ? tabella([['Video'], ['Visualizzazioni', 1], ['Punteggio', 1]], righe) : '<p class="vuoto">Ancora nessun video.</p>'}
-  </section>`;
+    <section class="scheda"><h2>Video usciti</h2><p class="sotto">Gli ultimi 30, con il punteggio rispetto alla mediana</p>
+      ${post.length ? tabella([['Video'], ['Viste', 1], ['Punteggio', 1]], righe) : '<p class="vuoto">Ancora nessun video.</p>'}
+    </section></div>`;
+}
+
+function disegnaRisultati(d) {
+  const post = conPunteggi(d.post).filter((x) => x.punteggio != null);
+  punteggi(document.getElementById('g-punteggi'), post);
+  tabelle.punteggi = () => tabella([['Piattaforma'], ['Video'], ['Uscito'], ['Punteggio', 1]],
+    post.map((x) => [esc(PIATTAFORME[x.piattaforma]), esc(x.titolo), giorno(x.data), `${x.punteggio.toFixed(1).replace('.', ',')}×`]));
+}
+
+// I numeri degli account: follower e visualizzazioni per giorno di uscita.
+function paginaSocial(d) {
+  const voci = Object.entries(PIATTAFORME).map(([p, nome]) => [nome, css(p)]);
+  return `<div class="griglia">
+    ${schedaGrafico('follower', 'Follower', 'Per piattaforma', legenda(voci))}
+    ${schedaGrafico('visual', 'Visualizzazioni dei video', 'Per giorno di uscita, tutti i social, ultimi numeri letti', legenda(voci))}
+  </div>`;
 }
 
 function disegnaSocial(d) {
   linee(document.getElementById('g-follower'), Object.entries(PIATTAFORME)
     .filter(([p]) => d.follower[p]?.length).map(([p, nome]) => ({ nome, colore: css(p), punti: d.follower[p] })), numero, false);
-  const post = conPunteggi(d.post).filter((x) => x.punteggio != null);
-  punteggi(document.getElementById('g-punteggi'), post);
   tabelle.follower = () => tabella([['Piattaforma'], ['Giorno'], ['Follower', 1]],
     Object.entries(d.follower).flatMap(([p, punti]) => punti.slice(-7).map(([g, v]) => [esc(PIATTAFORME[p]), giorno(g), fmtIntero.format(v)])));
-  tabelle.punteggi = () => tabella([['Piattaforma'], ['Video'], ['Uscito'], ['Punteggio', 1]],
-    post.map((x) => [esc(PIATTAFORME[x.piattaforma]), esc(x.titolo), giorno(x.data), `${x.punteggio.toFixed(1).replace('.', ',')}×`]));
+  const giorniVideo = [...new Set(d.post.map((p) => p.data))].sort();
+  const visual = Object.entries(PIATTAFORME).map(([p, nome]) => ({ nome, colore: css(p),
+    valori: giorniVideo.map((gv) => d.post.filter((x) => x.piattaforma === p && x.data === gv).reduce((s, x) => s + x.vis, 0)) }));
+  pile(document.getElementById('g-visual'), giorniVideo, visual);
+  tabelle.visual = () => tabella([['Giorno'], ...visual.map((v) => [v.nome, 1])],
+    giorniVideo.map((gv, i) => [giorno(gv), ...visual.map((v) => fmtIntero.format(v.valori[i]))]));
 }
 
 const ora = (d) => new Date(d).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 function paginaCoda(d) {
-  if (!d.coda.length) return '<section class="scheda"><h2>In coda per la pubblicazione</h2><p class="vuoto">Nessun video in coda.</p></section>';
+  if (!d.coda.length) return '<section class="scheda"><h2>In uscita</h2><p class="vuoto">Nessun video in programma.</p></section>';
   const schede = d.coda.map((v) => {
     const uscite = v.uscite.map((u) => `<div class="uscita">
         <div class="quando"><span class="punto" style="background:${css(u.piattaforma)}"></span><strong>${esc(PIATTAFORME[u.piattaforma])}</strong> · ${u.quando ? esc(ora(u.quando)) : 'in caricamento'}</div>
-        <p class="didascalia">${esc(u.didascalia || '')}</p>
+        ${u.didascalia ? `<details><summary>Leggi la descrizione</summary><p class="didascalia">${esc(u.didascalia)}</p></details>` : ''}
       </div>`).join('');
     const player = v.url
       ? `<video class="video-coda" controls playsinline preload="none" ${v.copertina ? `poster="${esc(v.copertina)}"` : ''} src="${esc(v.url)}"></video>`
@@ -646,11 +823,18 @@ const STATI_VIDEO = { idea: 'Idea', in_lavorazione: 'In lavorazione', in_revisio
   in_coda: 'In coda', uscito: 'Uscito', analizzato: 'Analizzato' };
 const USCITE = { pubblicata: ['bene', 'Uscito'], programmata: ['attenzione', 'Programmato'], in_corso: ['attenzione', 'In caricamento'], errore: ['grave', 'Errore'] };
 
+let filtroVideo = 'tutti';
+const FILTRI_VIDEO = [['tutti', 'Tutti'], ['usciti', 'Usciti'], ['coda', 'Da far uscire'], ['bocciati', 'Bocciati']];
+
 function paginaVideo(d) {
   if (!d.video.length) return '<section class="scheda"><h2>Video</h2><p class="vuoto">Nessun video prodotto.</p></section>';
-  const schede = d.video.map((v) => {
-    // Un video resta «in_coda» anche dopo le prime uscite: se è già uscito da qualche parte si dice così.
-    const stato = v.stato === 'in_coda' && v.uscite.some((u) => u.stato === 'pubblicata') ? 'uscito' : v.stato;
+  // Un video resta «in_coda» anche dopo le prime uscite: se è già uscito da qualche parte si dice così.
+  const statoVero = (v) => (v.stato === 'in_coda' && v.uscite.some((u) => u.stato === 'pubblicata') ? 'uscito' : v.stato);
+  const gruppo = (v) => ({ uscito: 'usciti', analizzato: 'usciti', bocciato: 'bocciati' }[statoVero(v)] || 'coda');
+  const quanti = (id) => (id === 'tutti' ? d.video.length : d.video.filter((v) => gruppo(v) === id).length);
+  const filtri = `<div class="filtri">${FILTRI_VIDEO.map(([id, nome]) => `<button data-filtro="${id}" aria-pressed="${id === filtroVideo}">${nome} <span class="quando">${quanti(id)}</span></button>`).join('')}</div>`;
+  const schede = d.video.filter((v) => filtroVideo === 'tutti' || gruppo(v) === filtroVideo).map((v) => {
+    const stato = statoVero(v);
     const colore = { bocciato: 'grave', uscito: 'bene', analizzato: 'bene', in_revisione: 'attenzione' }[stato] || '';
     const uscite = v.uscite.map((u) => {
       const [classe, nome] = USCITE[u.stato] || ['', u.stato];
@@ -668,7 +852,7 @@ function paginaVideo(d) {
         <p class="sotto"><span class="stato ${colore}">${esc(STATI_VIDEO[stato] || stato)}</span> · fatto il ${esc(giorno(v.creato))}</p>
         ${uscite ? `<ul class="uscite-video">${uscite}</ul>` : '<p class="vuoto">Non ancora dato ai social.</p>'}${guarda}</div></section>`;
   }).join('');
-  return `<p class="sotto intro-coda">Gli ultimi ${d.video.length} video prodotti, dal più nuovo. Tocca il nome di un social per aprire il post.</p><div class="griglia-video">${schede}</div>`;
+  return `<p class="sotto intro-coda">Gli ultimi ${d.video.length} video prodotti, dal più nuovo. Tocca il nome di un social per aprire il post.</p>${filtri}<div class="griglia-video">${schede || '<p class="vuoto">Nessuno.</p>'}</div>`;
 }
 
 // Le copertine dei video già usciti dappertutto possono non esserci più nel bucket: al posto dell'immagine rotta, il riquadro vuoto.
@@ -721,7 +905,7 @@ function markdown(testo) {
 
 function elencoDecisioni(decisioni) {
   if (!decisioni.length) return '<p class="vuoto">Ancora nessuna decisione.</p>';
-  return `<ul class="elenco">${decisioni.map((x) => `<li><b>${esc(x.agente)}</b> <span class="quando">${fa(x.alle)}</span>`
+  return `<ul class="elenco">${decisioni.map((x) => `<li><b>${esc(nomeAgente(x.agente))}</b> <span class="quando">${fa(x.alle)}</span>`
     + `<div>${esc(x.decisione)}</div><div class="motivo">${String(x.motivo).includes('\n') ? markdown(x.motivo) : `Perché: ${mdRiga(x.motivo)}`}</div>`
     + (x.dati?.resoconto ? `<details class="resoconto"><summary>Leggi il resoconto intero</summary>${markdown(x.dati.resoconto)}</details>` : '')
     + '</li>').join('')}</ul>`;
@@ -756,22 +940,31 @@ function paginaSistema(d) {
 const STATI_RICHIESTA = { nuova: ['In attesa', 'attenzione'], in_corso: ['In corso', 'attenzione'], fatta: ['Fatta', 'bene'],
   errore: ['Errore', 'grave'], annullata: ['Annullata', ''] };
 
-// Lo Stratega: la strategia in corso, le versioni prima e le lezioni. Lavora da solo; Ettore e Matteo lo fermano.
+// Il Direttore (o lo Stratega, quando il Direttore è spento): l'ultimo resoconto, le sue domande aperte, il quaderno,
+// i giri prima e le lezioni. Lavora da solo; Ettore e Matteo lo fermano.
 const STATI_ESPERIMENTO = { in_corso: ['In corso', 'attenzione'], vinto: ['Vinto', 'bene'], perso: ['Perso', 'grave'], fermato: ['Fermato', ''] };
 
-function paginaStrategia(d) {
-  if (!d.strategie.length) return '<section class="scheda"><h2>Strategia</h2><p class="vuoto">Lo Stratega non ha ancora fatto il primo giro.</p></section>';
-  const [ora, ...prima] = d.strategie;
+function paginaResoconti(d) {
+  const chi = direttoreAcceso(d) ? 'Il Direttore' : 'Lo Stratega';
+  if (!d.strategie.length) return `<section class="scheda"><h2>Resoconti</h2><p class="vuoto">${chi} non ha ancora fatto il primo giro.</p></section>`;
+  const [ultimo, ...prima] = d.strategie;
   const svolta = (s) => (s.svolta ? ' <span class="stato attenzione">Svolta</span>' : '');
-  const lezioni = d.lezioni.map((l) => `<li>${mdRiga(l.testo)} <span class="quando">${fa(l.alle)}${l.sicurezza ? ` · sicurezza ${esc(l.sicurezza)}` : ''}</span>`
+  const lezioni = d.lezioni.map((l) => `<li>${mdRiga(l.testo)} <span class="quando">${fa(l.alle)}${l.sicurezza ? `, sicurezza ${esc(l.sicurezza)}` : ''}</span>`
     + `${l.contesto || l.numeri ? `<div class="motivo">${esc([l.contesto, l.numeri].filter(Boolean).join(' · '))}</div>` : ''}</li>`).join('');
+  const domande = (d.domande || []).map((q) => `<li><b>Per ${esc(q.per === 'tutti' ? 'tutti e due' : q.per)}</b> <span class="quando">${fa(q.alle)}</span>`
+    + `<div>${mdRiga(q.testo)}</div>${q.perche ? `<div class="motivo">${mdRiga(q.perche)}</div>` : ''}</li>`).join('');
+  const quaderno = (d.quaderno || [])[0];
   return `<div class="griglia">
-    <section class="scheda"><h2>Strategia in corso${svolta(ora)}</h2><p class="sotto">Giro di ${fa(ora.alle)}${ora.pc ? ` · ${esc(ora.pc)}` : ''}</p>
-      <div class="resoconto">${markdown(ora.testo)}</div></section>
+    <section class="scheda"><h2>Ultimo giro${svolta(ultimo)}</h2><p class="sotto">${chi}, ${fa(ultimo.alle)}${ultimo.pc ? `, dal ${esc(ultimo.pc)}` : ''}</p>
+      <div class="resoconto">${markdown(ultimo.testo)}</div></section>
+    <section class="scheda"><h2>Domande aperte</h2><p class="sotto">Quello che chiede a Ettore e Matteo. Si risponde dalla chat con Claude, non da qui</p>
+      ${domande ? `<ul class="elenco">${domande}</ul>` : '<p class="vuoto">Nessuna: sta decidendo da solo.</p>'}</section>
+    ${quaderno ? `<section class="scheda"><h2>Il suo quaderno</h2><p class="sotto">Gli appunti che si lascia da un giro all'altro, scritti ${fa(quaderno.alle)}</p>
+      <div class="resoconto">${markdown(quaderno.testo || '')}</div></section>` : ''}
+    <section class="scheda"><h2>Giri prima</h2>${prima.length ? `<ul class="elenco">${prima.map((s) => `<li>${mdRiga(s.riassunto || 'Giro senza riassunto.')}${svolta(s)} <span class="quando">${fa(s.alle)}</span>`
+      + `<details class="resoconto"><summary>Leggi</summary>${markdown(s.testo || '')}</details></li>`).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
     <section class="scheda"><h2>Lezioni</h2><p class="sotto">Le cose imparate: si possono riprovare, dicendo che cosa cambia</p>
       ${lezioni ? `<ul class="elenco">${lezioni}</ul>` : '<p class="vuoto">Ancora nessuna.</p>'}</section>
-    <section class="scheda"><h2>Giri prima</h2>${prima.length ? `<ul class="elenco">${prima.map((s) => `<li>${mdRiga(s.riassunto)}${svolta(s)} <span class="quando">${fa(s.alle)}</span>`
-      + `<details class="resoconto"><summary>Leggi</summary>${markdown(s.testo)}</details></li>`).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
   </div>`;
 }
 
@@ -789,7 +982,7 @@ function paginaEsperimenti(d) {
   const inCorso = d.esperimenti.filter((e) => e.stato === 'in_corso');
   const chiusi = d.esperimenti.filter((e) => e.stato !== 'in_corso');
   return `<div class="griglia">
-    <section class="scheda"><h2>In corso</h2><p class="sotto">Lo Stratega li apre e li chiude da solo. Se uno è sbagliato, fermatelo.</p>
+    <section class="scheda"><h2>In corso</h2><p class="sotto">${direttoreAcceso(d) ? 'Il Direttore' : 'Lo Stratega'} li apre e li chiude da solo. Se uno è sbagliato, fermatelo.</p>
       ${inCorso.length ? `<ul class="elenco">${inCorso.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
     <section class="scheda"><h2>Chiusi</h2><p class="sotto">Si giudicano sul punteggio (40% visualizzazioni, 20% tenuta, 40% interesse: like, commenti, salvati, condivisioni) e sul voto download; se non vanno d'accordo vince il voto download</p>
       ${chiusi.length ? `<ul class="elenco">${chiusi.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
@@ -911,23 +1104,48 @@ let dati = null;
 let attiva = 'oggi';
 let sb = null;
 
-function mostra(id) {
+const PAGINE = { oggi: paginaOggi, uscite: paginaCoda, fatti: paginaVideo, risultati: paginaRisultati, app: paginaApp, social: paginaSocial,
+  resoconti: paginaResoconti, esperimenti: paginaEsperimenti, decisioni: paginaDecisioni, commenti: paginaCommenti, richieste: paginaRichieste, sistema: paginaSistema };
+const DISEGNI = { app: disegnaApp, social: disegnaSocial, risultati: disegnaRisultati };
+
+// I segni rossi sulla barra: quello che aspetta una persona (domande del Direttore e avvisi gravi; commenti da decidere).
+function segni(d) {
+  return { oggi: (d.domande || []).length + d.avvisi.filter((a) => a.livello === 'grave').length,
+    altro: (d.commenti || []).filter((c) => ['bozza', 'a_persona'].includes(c.stato)).length };
+}
+
+// Mostra una pagina: barra delle sezioni, pagine della sezione, contenuto e indirizzo. `daCapo` riporta in cima,
+// e si usa quando è la persona a cambiare pagina (non quando la pagina si rilegge da sola).
+function mostra(id, daCapo = false) {
   attiva = id;
   for (const g of grafici) g.dispose();
   grafici.clear();
   for (const k of Object.keys(tabelle)) delete tabelle[k];
-  document.querySelectorAll('#schede button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id ? 'page' : 'false'));
-  const scheda = SCHEDE.find((s) => s.id === id);
-  const main = document.getElementById('contenuto');
-  if (scheda.fase) {
-    main.innerHTML = `<section class="scheda"><h2>${esc(scheda.nome)}</h2><p class="in-arrivo">${esc(scheda.fase)}</p></section>`;
-    return;
-  }
-  main.innerHTML = { oggi: paginaOggi, app: paginaApp, social: paginaSocial, coda: paginaCoda, video: paginaVideo, esperimenti: paginaEsperimenti, commenti: paginaCommenti, strategia: paginaStrategia, richieste: paginaRichieste, decisioni: paginaDecisioni, sistema: paginaSistema }[id](dati);
-  if (id === 'app') disegnaApp(dati);
-  if (id === 'social') disegnaSocial(dati);
-  if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
+  const sezione = sezioneDi(id);
+  ricorda(sezione.id, id);
+  const fuoco = document.activeElement?.dataset || {};
+  const n = segni(dati);
+  document.getElementById('schede').innerHTML = SEZIONI.map((s) => `<button data-sezione="${s.id}" aria-current="${s.id === sezione.id ? 'page' : 'false'}">`
+    + `<svg viewBox="0 0 24 24" aria-hidden="true">${s.icona}</svg><span>${esc(s.nome)}</span>`
+    + (n[s.id] ? `<span class="segno" aria-label="${n[s.id]} da guardare">${n[s.id]}</span>` : '') + '</button>').join('');
+  const viste = document.getElementById('viste');
+  viste.hidden = sezione.pagine.length < 2;
+  viste.innerHTML = sezione.pagine.map(([p, nome]) => `<button data-pagina="${p}" aria-current="${p === id ? 'page' : 'false'}">${esc(nome)}</button>`).join('');
+  document.getElementById('contenuto').innerHTML = PAGINE[id](dati);
+  DISEGNI[id]?.(dati);
+  if (fuoco.sezione) document.querySelector(`[data-sezione="${fuoco.sezione}"]`)?.focus();
+  if (fuoco.pagina) document.querySelector(`[data-pagina="${fuoco.pagina}"]`)?.focus();
+  const indirizzo = sezione.pagine.length < 2 ? `#${sezione.id}` : `#${sezione.id}/${id}`;
+  if (location.hash !== indirizzo) history.replaceState(null, '', indirizzo);
+  if (daCapo) scrollTo(0, 0);
 }
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-filtro]');
+  if (!b) return;
+  filtroVideo = b.dataset.filtro;
+  mostra('fatti');
+});
 
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-tabella]');
@@ -946,8 +1164,8 @@ document.addEventListener('click', (e) => {
 
 window.addEventListener('resize', () => grafici.forEach((g) => g.resize()));
 window.addEventListener('hashchange', () => {
-  const id = location.hash.slice(1);
-  if (dati && id !== attiva && SCHEDE.some((s) => s.id === id)) mostra(id);
+  const id = paginaDa(location.hash);
+  if (dati && id !== attiva) mostra(id, true);
 });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => dati && mostra(attiva));
 
@@ -985,9 +1203,15 @@ async function rileggi() {
 }
 
 async function avvia() {
-  const nav = document.getElementById('schede');
-  nav.innerHTML = SCHEDE.map((s) => `<button data-id="${s.id}">${esc(s.nome)}</button>`).join('');
-  nav.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) mostra(b.dataset.id); });
+  document.getElementById('schede').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || !dati) return;
+    const sezione = SEZIONI.find((s) => s.id === b.dataset.sezione);
+    // Toccare la sezione in cui si è già riporta alla sua prima pagina, in cima.
+    mostra(sezione === sezioneDi(attiva) ? sezione.pagine[0][0] : ricordata(sezione), true);
+  });
+  document.getElementById('viste').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && dati) mostra(b.dataset.pagina, true); });
+  document.getElementById('contenuto').innerHTML = '<p class="vuoto">Leggo i dati…</p>';
 
   const { supabaseUrl, supabaseChiavePubblica } = window.GESTIONALE || {};
   const pillola = document.getElementById('stato-dati');
@@ -1010,12 +1234,12 @@ async function avvia() {
     setInterval(rileggi, 60000);
     document.addEventListener('visibilitychange', rileggi);
   }
-  const iniziale = location.hash.slice(1);
-  mostra(SCHEDE.some((s) => s.id === iniziale) ? iniziale : 'oggi');
+  mostra(paginaDa(location.hash));
 }
 
 function chiediAccesso(sb) {
   document.getElementById('schede').hidden = true;
+  document.getElementById('contenuto').innerHTML = '';
   const sezione = document.getElementById('accesso');
   sezione.hidden = false;
   const esito = document.getElementById('esito-accesso');
@@ -1031,7 +1255,7 @@ function chiediAccesso(sb) {
   document.getElementById('manda-link').addEventListener('click', async () => {
     if (!email()) { esito.textContent = 'Scrivi prima la tua email.'; return; }
     const { error } = await sb.auth.signInWithOtp({ email: email(), options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-    esito.textContent = !error ? 'Fatto: controlla la posta e apri il link in questo stesso browser. Poi scegli una password in «Sistema».'
+    esito.textContent = !error ? 'Fatto: controlla la posta e apri il link in questo stesso browser. Poi scegli una password in «Altro», pagina «Sistema».'
       : /rate limit/i.test(error.message) ? 'Troppe email in poco tempo (Supabase gratis ne manda 2 all’ora): riprova fra un’ora.'
       : `Non è andata: ${error.message}`;
   });

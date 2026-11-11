@@ -8,8 +8,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Gestionale">
+  <meta name="theme-color" content="#f4f0e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15120f" media="(prefers-color-scheme: dark)">
   <title>NoteGuide Gestionale</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236250d6'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23191510'/%3E%3Cpath d='M4 11.5 7 5l2 4 1.5-2 1.5 4.5' fill='none' stroke='%23c22f26' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <!-- Gli stessi caratteri dell'app: Instrument Sans per leggere, Newsreader per titoli e numeri, Caveat per la scrittura a mano -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
   <link rel="stylesheet" href="stile.css">
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
@@ -18,15 +24,16 @@
 </head>
 <body>
   <header class="testata">
-    <div class="marchio">NoteGuide <span>Gestionale</span></div>
+    <div class="marchio">NoteGuide <span>gestionale</span></div>
     <div id="stato-dati" class="pillola" role="status"></div>
   </header>
-  <nav id="schede" class="schede" aria-label="Sezioni"></nav>
+  <nav id="schede" class="barra" aria-label="Sezioni"></nav>
+  <nav id="viste" class="viste" aria-label="Pagine della sezione" hidden></nav>
   <main id="contenuto" tabindex="-1"></main>
 
   <section id="accesso" class="accesso" hidden>
-    <h1>Accesso</h1>
-    <p>Entra con email e password. Solo Ettore e Matteo hanno un account.</p>
+    <h1>Chi sei?</h1>
+    <p>Si entra una volta sola: poi questo telefono se lo ricorda. Solo Ettore e Matteo hanno un account.</p>
     <form id="modulo-accesso">
       <label for="email">Email</label>
       <input id="email" name="email" type="email" autocomplete="username" required>
