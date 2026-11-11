@@ -446,7 +446,7 @@ function schedaAttivi(d) {
   const crediti = d.pc.filter((p) => p.info?.crediti).map((p) => {
     const c = p.info.crediti;
     return `<p class="sotto" style="margin:4px 0">Claude di ${esc(p.persona || p.id)}: sessione di 5 ore al <strong>${pct(c.cinque_ore)}</strong>
-      (si rinnova ${esc(ora(c.sblocco_cinque_ore))}), settimana al ${pct(c.settimana)}. Al 90% la produzione si ferma fino al rinnovo.</p>`;
+      (si rinnova ${esc(ora(c.sblocco_cinque_ore))}), settimana al ${pct(c.settimana)}. ${esc(c.ritmo || '')}</p>`;
   }).join('');
   const righe = (d.attivi || []).map((a) => [`<b>${esc(NOMI_AGENTI[a.agente] || a.agente)}</b>`, esc(persona[a.pc] || a.pc || '?'),
     a.da ? fa(a.da) : '–', esc(a.cosa)]);
