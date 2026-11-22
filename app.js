@@ -41,6 +41,8 @@ const FONTI = { 'App Store search': "Ricerca sull'App Store", 'App Store browse'
 const TASTI = { verifica: 'Verifica', suggerimento: 'Suggerimento', domanda: 'Domanda' };
 // Le voci della domanda «Come hai conosciuto NoteGuide?» che l'app fa alla prima apertura (dal 10/11/2026).
 const CONOSCIUTO = { instagram: 'Instagram', store: 'App Store', tiktok: 'TikTok', youtube: 'YouTube', passaparola: 'Passaparola', altro: 'Altro' };
+// Le prime aperture dell'app, per apparecchio: un +1 anonimo per dispositivo (Ettore, 22/11/2026).
+const APPARECCHI = { ipad: 'iPad', iphone: 'iPhone', 'android-tablet': 'Tablet Android', 'android-telefono': 'Telefono Android', computer: 'Computer' };
 const nomiPaesi = new Intl.DisplayNames(['it'], { type: 'region' });
 const nomePaese = (codice) => { try { return nomiPaesi.of(codice); } catch { return codice; } };
 
@@ -128,6 +130,8 @@ function datiEsempio() {
     conosciuto: [3, 2, 1].flatMap((i) => [['instagram', 3], ['store', 3], ['tiktok', 1], ['youtube', 1], ['passaparola', 0], ['altro', 1]]
       .map(([voce, n]) => ({ giorno: isoGiorno(giorniFa(i)), voce, quanti: Math.round(n * (0.5 + caso())),
         testi: voce === 'altro' ? ['un volantino a scuola'] : [] }))),
+    aperture: [3, 2, 1].flatMap((i) => [['ipad', true, 5], ['ipad', false, 8], ['iphone', true, 2], ['iphone', false, 1], ['android-tablet', true, 1]]
+      .map(([apparecchio, nuovo, n]) => ({ giorno: isoGiorno(giorniFa(i)), apparecchio, dove: 'app', nuovo, quanti: Math.round(n * (0.5 + caso())) }))),
     costiMese: 0,
     strategie: [
       { id: 2, alle: new Date(ora - 40 * 60000).toISOString(), svolta: true, pc: 'PC-ETTORE', riassunto: 'Apro «Gag dopo l\'app»: Mago tiene il 63% di visione. Spostati a domani due reel di stasera.',
@@ -276,13 +280,14 @@ async function datiVeri(sb) {
     sb.from('quaderno').select('*').order('alle', { ascending: false }).limit(1),
     sb.from('richieste').select('id,per,testo,creata_alle').eq('stato', 'nuova').eq('agente', 'animatore').order('creata_alle').limit(30),
     tutte(() => sb.from('conosciuto_app').select('giorno,voce,quanti,testi', conta).order('giorno').order('voce')),
+    tutte(() => sb.from('aperture_app').select('giorno,apparecchio,dove,nuovo,quanti', conta).order('giorno')),
     // Matteo, 22/11: le decisioni del Capo a parte (una ogni mezz'ora) e i giri dello Scout AI per la pagina Modelli AI.
     sb.from('decisioni').select('alle,decisione,motivo').eq('agente', 'capo').order('alle', { ascending: false }).limit(15),
     sb.from('decisioni').select('*').eq('agente', 'scout').order('alle', { ascending: false }).limit(12),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, capo, scout] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -320,7 +325,7 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
-    domande, quaderno, fila, conosciuto, capo, scout,
+    domande, quaderno, fila, conosciuto, aperture, capo, scout,
     // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
     usciteOggi: pubblicazioni.filter((p) => giornoQui(p.pubblicata_alle) === giornoQui(new Date())).map((p) => ({ piattaforma: p.piattaforma,
       quando: p.pubblicata_alle, url: p.url, titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo' })),
@@ -724,6 +729,7 @@ function paginaApp(d) {
     ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni', '', 'Per campagna se i link nelle bio la indicano, altrimenti per fonte di Apple.')}
     ${schedaGrafico('paesi', 'Da quali paesi', 'Primi download degli ultimi 90 giorni')}
     ${schedaGrafico('conosciuto', 'Come hanno conosciuto NoteGuide', `Le risposte alla domanda che l'app fa alla prima apertura${d.conosciuto.length ? `, dal ${giorno(d.conosciuto[0].giorno)}` : ''}. Chi non risponde non conta. Nella tabella, per giorno, con le frasi scritte in «Altro»`)}
+    ${schedaGrafico('aperture', 'Prime aperture dell\'app', `Ogni dispositivo conta una volta, la prima volta che apre NoteGuide${d.aperture.length ? `, dal ${giorno(d.aperture[0].giorno)}` : ' (il contatore parte quando l\'app lo pubblica)'}. Nel grafico i nuovi; nella tabella, per giorno, nuovi / già in uso (chi l\'app ce l\'aveva e la riapre). Chi non la apre non c\'è: quello lo sa solo Apple`)}
     ${schedaGrafico('tasti', 'I tasti dell\'app, dal più usato', `Quante volte si sceglie una voce dalla tendina di Verifica, Suggerimento e Domanda${d.tasti.length ? `, dal ${giorno(d.tasti[0].giorno)}` : ''}. Solo il numero, non chi li preme; il tutorial non conta`)}
   </div>`;
 }
@@ -760,6 +766,13 @@ function disegnaApp(d) {
   tabelle.conosciuto = () => tabella([['Giorno'], ...Object.values(CONOSCIUTO).map((n) => [n, 1]), ['Frasi in «Altro»']], giorniConosciuto.map((gc) => [giorno(gc),
     ...Object.keys(CONOSCIUTO).map((k) => fmtIntero.format(rigaConosciuto(gc, k)?.quanti ?? 0)),
     esc((rigaConosciuto(gc, 'altro')?.testi || []).join(' · '))]));
+  const quanteAperture = (filtro) => d.aperture.filter(filtro).reduce((s, x) => s + x.quanti, 0);
+  const totAperture = Object.entries(APPARECCHI).map(([k, nome]) => [nome, quanteAperture((x) => x.apparecchio === k && x.nuovo)]);
+  colonne(document.getElementById('g-aperture'), totAperture.map((x) => x[0]), totAperture.map((x) => x[1]), colore, numero, true);
+  const giorniAperture = [...new Set(d.aperture.map((x) => x.giorno))].sort().reverse();
+  tabelle.aperture = () => tabella([['Giorno'], ...Object.values(APPARECCHI).map((n) => [n, 1])], giorniAperture.map((ga) => [giorno(ga),
+    ...Object.keys(APPARECCHI).map((k) => `${fmtIntero.format(quanteAperture((x) => x.giorno === ga && x.apparecchio === k && x.nuovo))} / `
+      + fmtIntero.format(quanteAperture((x) => x.giorno === ga && x.apparecchio === k && !x.nuovo)))]));
   tabelle.paesi = () => tabella([['Paese'], ['Download', 1]], d.app.paesi.map((x) => [esc(x.paese), fmtIntero.format(x.download)]));
   linee(document.getElementById('g-attivi'), [{ nome: 'Utenti attivi', colore, punti: g.map((x) => [x.giorno, x.dispositivi]) }]);
   // Solo settimane complete (da lunedì a domenica), così la prima e l'ultima non sembrano un calo.
