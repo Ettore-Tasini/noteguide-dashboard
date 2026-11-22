@@ -239,6 +239,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-
 .elenco .motivo { font-size: 14.5px; color: var(--testo-2); }
 .elenco .motivo ul, .resoconto ul, .resoconto ol { margin: 4px 0; padding-left: 20px; }
 .resoconto { margin-top: 6px; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+/* «Come si legge» sotto il titolo dei grafici: la spiegazione lunga resta chiusa (Matteo, 22/11) */
+.spiega { margin: -4px 0 8px; font-size: 14px; color: var(--testo-2); }
+.spiega summary { cursor: pointer; font-size: 13.5px; font-weight: 600; padding: 2px 0; list-style-position: inside; }
+.spiega p { margin: 4px 0 0; }
+.cambio { font-size: 14.5px; margin: 4px 0; overflow-wrap: anywhere; }
 .resoconto summary { cursor: pointer; font-size: 14.5px; font-weight: 600; padding: 8px 0; text-decoration: underline; text-decoration-color: var(--asse); text-underline-offset: 3px; }
 .resoconto h3, .resoconto h4, .resoconto h5 { font-family: var(--serif); font-size: 17px; margin: 16px 0 4px; }
 .resoconto li { padding: 2px 0; border: 0; }

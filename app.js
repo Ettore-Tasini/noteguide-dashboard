@@ -11,7 +11,7 @@ const SEZIONI = [
   { id: 'direttore', nome: 'Direttore', icona: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c.8-4.2 3.5-6.3 7-6.3s6.2 2.1 7 6.3"/>',
     pagine: [['resoconti', 'Resoconti'], ['esperimenti', 'Esperimenti'], ['decisioni', 'Decisioni']] },
   { id: 'altro', nome: 'Altro', icona: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
-    pagine: [['commenti', 'Commenti'], ['richieste', 'Richieste'], ['sistema', 'Sistema']] },
+    pagine: [['commenti', 'Commenti'], ['richieste', 'Richieste'], ['modelli', 'Modelli AI'], ['sistema', 'Sistema']] },
 ];
 // Gli indirizzi di prima del rifacimento, per chi li ha salvati («Trend» non c'è più: non è mai stata costruita).
 const VECCHIE = { coda: 'uscite', strategia: 'resoconti', trend: 'oggi' };
@@ -47,7 +47,7 @@ const nomePaese = (codice) => { try { return nomiPaesi.of(codice); } catch { ret
 const fmtNumero = new Intl.NumberFormat('it-IT', { notation: 'compact', maximumFractionDigits: 1 });
 const fmtIntero = new Intl.NumberFormat('it-IT');
 const fmtEuro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const fmtDollari = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'USD' });
+const fmtDollari = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol' });
 const numero = (n) => (n == null ? '–' : fmtNumero.format(n));
 const euro = (n) => (n == null ? '–' : fmtEuro.format(n));
 // I ricavi Apple li dà in dollari («Proceeds in USD»): si mostrano così, senza cambi inventati.
@@ -181,6 +181,17 @@ function datiEsempio() {
       { alle: new Date(ora - 26 * 3600000).toISOString(), agente: 'programmatore', decisione: 'Instagram alle 13 e alle 19.', motivo: 'Sono le ore in cui negli ultimi 14 giorni un PC era acceso.' },
       { alle: new Date(ora - 50 * 3600000).toISOString(), agente: 'revisore', decisione: 'Bocciato un video: testo con «illimitato».', motivo: "L'AI gratuita ha 15 usi al giorno." },
     ],
+    capo: [0.5, 1, 1.5].map((h) => ({ alle: new Date(ora - h * 3600000).toISOString(), decisione: 'fila del render: prima nessuno (ordine di arrivo)', motivo: '' })),
+    scout: [
+      { alle: new Date(ora - 5 * 86400000).toISOString(), agente: 'scout', decisione: 'Scout AI: una proposta da guardare',
+        motivo: 'Un modello nuovo fa come quello di oggi e costa circa un settimo.',
+        dati: { resoconto: '# Scout AI di esempio\n\n## In 3 righe\n- **Un modello nuovo per l\'AI gratuita**: sul banco trova gli stessi errori.\n- Costa circa un settimo.\n- Le altre fasce restano come sono.\n\n## Che cosa ho controllato\nIl listino e il banco.',
+          controllati: ['esempio/modello-a', 'esempio/modello-b'],
+          proposte: [{ titolo: 'AI gratuita: un modello di esempio costa un settimo', fascia: 'gratuita', tasto: 'tutti', al_posto_di: 'cf/modello-di-oggi',
+            modello: 'esempio/modello-nuovo', provato_sul_banco: true, perche: '46 errori su 47, nessun falso allarme.', prezzi: '0,03 centesimi a verifica contro 0,20.',
+            privacy: 'Fornitore negli USA, non addestra sui dati.', fonti: ['https://example.com/prezzi'] }] } },
+      { alle: new Date(ora - 12 * 86400000).toISOString(), agente: 'scout', decisione: 'Scout AI: controllato, nessuna novità', motivo: 'I modelli di oggi restano i migliori.', dati: {} },
+    ],
     pc: [
       { id: 'PC-ETTORE', persona: 'Ettore', ultimo_battito: new Date(ora - 4 * 60000).toISOString(),
         info: { crediti: { cinque_ore: 0.42, sblocco_cinque_ore: new Date(ora + 100 * 60000).toISOString(), settimana: 0.18,
@@ -241,7 +252,7 @@ async function datiVeri(sb) {
     tutte(() => sb.from('metriche_post').select('pubblicazione_id,rilevate_alle,visualizzazioni', conta).gte('rilevate_alle', da)
       .order('rilevate_alle').order('pubblicazione_id')),
     sb.from('avvisi').select('*').is('risolto_alle', null).order('alle', { ascending: false }).limit(60),
-    sb.from('decisioni').select('*').order('alle', { ascending: false }).limit(100),
+    sb.from('decisioni').select('*').not('agente', 'in', '(capo,scout)').order('alle', { ascending: false }).limit(100),
     sb.from('pc').select('*').order('ultimo_battito', { ascending: false }),
     sb.from('interruttori').select('*').order('nome'),
     sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note)')
@@ -265,10 +276,13 @@ async function datiVeri(sb) {
     sb.from('quaderno').select('*').order('alle', { ascending: false }).limit(1),
     sb.from('richieste').select('id,per,testo,creata_alle').eq('stato', 'nuova').eq('agente', 'animatore').order('creata_alle').limit(30),
     tutte(() => sb.from('conosciuto_app').select('giorno,voce,quanti,testi', conta).order('giorno').order('voce')),
+    // Matteo, 22/11: le decisioni del Capo a parte (una ogni mezz'ora) e i giri dello Scout AI per la pagina Modelli AI.
+    sb.from('decisioni').select('alle,decisione,motivo').eq('agente', 'capo').order('alle', { ascending: false }).limit(15),
+    sb.from('decisioni').select('*').eq('agente', 'scout').order('alle', { ascending: false }).limit(12),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, capo, scout] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -306,7 +320,7 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
-    domande, quaderno, fila, conosciuto,
+    domande, quaderno, fila, conosciuto, capo, scout,
     // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
     usciteOggi: pubblicazioni.filter((p) => giornoQui(p.pubblicata_alle) === giornoQui(new Date())).map((p) => ({ piattaforma: p.piattaforma,
       quando: p.pubblicata_alle, url: p.url, titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo' })),
@@ -438,9 +452,10 @@ function tabella(intestazioni, righe) {
 }
 
 // Una scheda con grafico e, a richiesta, la stessa cosa in tabella.
-function schedaGrafico(id, titolo, sotto, extra = '') {
+function schedaGrafico(id, titolo, sotto, extra = '', spiega = '') {
   return `<section class="scheda"><div class="scheda-testa"><div><h2>${esc(titolo)}</h2><p class="sotto">${esc(sotto)}</p></div>`
-    + `<button class="bottone-tabella" data-tabella="${id}" aria-pressed="false">Tabella</button></div>${extra}`
+    + `<button class="bottone-tabella" data-tabella="${id}" aria-pressed="false">Tabella</button></div>`
+    + `${spiega ? `<details class="spiega"><summary>Come si legge</summary><p>${esc(spiega)}</p></details>` : ''}${extra}`
     + `<div id="g-${id}" class="grafico" role="img" aria-label="${esc(titolo)}"></div><div id="t-${id}" hidden></div></section>`;
 }
 
@@ -686,9 +701,9 @@ function schedaStima(st) {
   const chiaro = st.extra > st.margine ? 'più di quanto variano da soli' : 'dentro quanto variano da soli, quindi per ora non si distingue dal caso';
   return `${testa} (dal ${giorno(st.inizio)} al ${giorno(st.fine)})</div>
       <div class="valore">${st.extra > 0 ? '+' : ''}${fmtIntero.format(st.extra)}</div>
-      <div class="delta">${fmtIntero.format(st.fatti)} download contro i ${fmtIntero.format(Math.round(st.attesi))} attesi con la media dei 28 giorni prima
-        (${st.media.toFixed(1).replace('.', ',')} al giorno). Margine ±${st.margine}: ${chiaro}.${ogniMille}</div>
-      <p class="sotto" style="margin:8px 0 0">Dai social non arrivano link: chi vede un video cerca NoteGuide sull'App Store, e Apple lo conta come ricerca. Per questo è una stima e non un conteggio.</p>
+      <div class="delta">${fmtIntero.format(st.fatti)} fatti, ${fmtIntero.format(Math.round(st.attesi))} attesi senza i social (±${st.margine})</div>
+      <details class="spiega"><summary>Come si legge</summary><p>Attesi: la media dei 28 giorni prima dei video (${st.media.toFixed(1).replace('.', ',')} al giorno).
+        Margine ±${st.margine}: ${chiaro}.${ogniMille} Dai social non arrivano link: chi vede un video cerca NoteGuide sull'App Store, e Apple lo conta come ricerca. Per questo è una stima e non un conteggio.</p></details>
     </section>`;
 }
 
@@ -700,11 +715,13 @@ function paginaApp(d) {
       <section class="scheda tessera"><div class="etichetta">Ricavi netti, 30 giorni</div><div class="valore">${dollari(ricavi30)}</div></section>
       <section class="scheda tessera"><div class="etichetta">Costi del mese</div><div class="valore">${euro(d.costiMese)}</div></section>
     </div><div class="griglia">
-    ${schedaGrafico('imbuto', 'Dal video al download', 'Per giorno. Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download. I numeri di Apple arrivano dopo circa 2 giorni', righeImbuto(ogniMille(d.app.imbuto || [])))}
-    ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store. Tratteggio: la media prima dei social; zona grigia: da quando escono i video')}
-    ${schedaGrafico('attivi', 'Utenti attivi', 'Dispositivi che hanno aperto l\'app, per giorno')}
-    ${schedaGrafico('ricavi', 'Ricavi netti per settimana', 'Acquisti di crediti al netto della quota di Apple, in dollari come li dà Apple')}
-    ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni: per campagna se i link nelle bio la indicano, altrimenti per fonte')}
+    ${schedaGrafico('imbuto', 'Dal video al download', 'Visite al profilo, alla pagina dell\'app e download, per giorno', righeImbuto(ogniMille(d.app.imbuto || [])),
+      'Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download. I numeri di Apple arrivano dopo circa 2 giorni.')}
+    ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store', '',
+      'Tratteggio: la media prima dei social. Zona grigia: da quando escono i video. Apple dà i numeri dopo circa 2 giorni.')}
+    ${schedaGrafico('attivi', 'Utenti attivi', 'Dispositivi che aprono l\'app, per giorno')}
+    ${schedaGrafico('ricavi', 'Ricavi netti per settimana', 'Crediti venduti, tolta la quota di Apple', '', 'In dollari, come li dà Apple.')}
+    ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni', '', 'Per campagna se i link nelle bio la indicano, altrimenti per fonte di Apple.')}
     ${schedaGrafico('paesi', 'Da quali paesi', 'Primi download degli ultimi 90 giorni')}
     ${schedaGrafico('conosciuto', 'Come hanno conosciuto NoteGuide', `Le risposte alla domanda che l'app fa alla prima apertura${d.conosciuto.length ? `, dal ${giorno(d.conosciuto[0].giorno)}` : ''}. Chi non risponde non conta. Nella tabella, per giorno, con le frasi scritte in «Altro»`)}
     ${schedaGrafico('tasti', 'I tasti dell\'app, dal più usato', `Quante volte si sceglie una voce dalla tendina di Verifica, Suggerimento e Domanda${d.tasti.length ? `, dal ${giorno(d.tasti[0].giorno)}` : ''}. Solo il numero, non chi li preme; il tutorial non conta`)}
@@ -918,16 +935,84 @@ function markdown(testo) {
   return out.join('');
 }
 
+// I resoconti di Direttore e Scout sono lunghi (9-11 mila caratteri). Sul telefono si legge la parte «In 3 righe»;
+// il resto si apre con «Leggi tutto» (Matteo, 22/11: «i testi sono un po' troppo lunghi»).
+function inBreve(testo) {
+  const righe = String(testo || '').split('\n');
+  const da = righe.findIndex((t) => /^#{1,4}\s+in (3|tre) righe/i.test(t.trim()));
+  if (da < 0) return '';
+  const fine = righe.findIndex((t, i) => i > da && /^#{1,4}\s/.test(t.trim()));
+  return righe.slice(da + 1, fine < 0 ? undefined : fine).join('\n').trim();
+}
+function resocontoCorto(testo, apri = 'Leggi tutto') {
+  const breve = inBreve(testo);
+  if (!breve) return `<details class="resoconto"><summary>${apri}</summary>${markdown(testo || '')}</details>`;
+  return `<div class="resoconto">${markdown(breve)}</div><details class="resoconto"><summary>${apri}</summary>${markdown(testo)}</details>`;
+}
+// Solo il segno dell'elenco o del titolo: un «**» all'inizio resta, se no il grassetto si apre e non si chiude.
+const primaRiga = (testo) => String(testo || '').split(/\r?\n/).map((t) => t.replace(/^\s*(?:[>#]+|[-*]|\d+\.)\s+/, '').trim()).find(Boolean) || '';
+
 function elencoDecisioni(decisioni) {
   if (!decisioni.length) return '<p class="vuoto">Ancora nessuna decisione.</p>';
   return `<ul class="elenco">${decisioni.map((x) => `<li><b>${esc(nomeAgente(x.agente))}</b> <span class="quando">${fa(x.alle)}</span>`
-    + `<div>${esc(x.decisione)}</div><div class="motivo">${String(x.motivo).includes('\n') ? markdown(x.motivo) : `Perché: ${mdRiga(x.motivo)}`}</div>`
-    + (x.dati?.resoconto ? `<details class="resoconto"><summary>Leggi il resoconto intero</summary>${markdown(x.dati.resoconto)}</details>` : '')
+    + `<div>${esc(x.decisione)}</div><div class="motivo">${mdRiga(primaRiga(x.motivo))}</div>`
+    + (String(x.motivo).trim().includes('\n') || x.dati?.resoconto
+      ? `<details class="resoconto"><summary>Perché, per intero</summary>${markdown(x.motivo)}${x.dati?.resoconto ? markdown(x.dati.resoconto) : ''}</details>` : '')
     + '</li>').join('')}</ul>`;
 }
 
 function paginaDecisioni(d) {
-  return `<section class="scheda"><h2>Decisioni degli agenti</h2><p class="sotto">Ogni scelta presa da soli, con il motivo</p>${elencoDecisioni(d.decisioni)}</section>`;
+  // Il Capo controlla la fila ogni mezz'ora: le sue righe stanno chiuse in fondo, se no coprono tutto il resto.
+  const capo = (d.capo || []).length ? `<section class="scheda"><details class="resoconto"><summary>Il Capo: ultimi ${d.capo.length} controlli automatici</summary>
+      <ul class="elenco">${d.capo.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span></li>`).join('')}</ul></details></section>` : '';
+  return `<div class="griglia"><section class="scheda"><h2>Decisioni degli agenti</h2><p class="sotto">Le scelte prese da soli. Lo Scout AI è in Altro → Modelli AI</p>${elencoDecisioni(d.decisioni)}</section>${capo}</div>`;
+}
+
+// Lo Scout AI (Ettore, 16/11): ogni lunedì sera controlla se i modelli di Verifica, Suggerimento e Domanda dentro
+// NoteGuide sono ancora i migliori per quello che costano. Qui l'ultimo controllo, le proposte e i giri prima
+// (Matteo, 22/11: «stare continuamente aggiornati sui modelli AI»).
+const FASCE = { gratuita: 'AI gratuita', economico: 'Economico', bilanciato: 'Bilanciato', preciso: 'Preciso' };
+function prossimoLunedi() {
+  const x = new Date();
+  let giorni = (8 - x.getDay()) % 7;
+  if (giorni === 0 && x.getHours() >= 21) giorni = 7;
+  x.setDate(x.getDate() + giorni);
+  return x.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+function schedaProposta(p) {
+  const tasto = p.tasto && p.tasto !== 'tutti' ? ` · ${esc(p.tasto[0].toUpperCase() + p.tasto.slice(1))}` : '';
+  return `<li><b>${mdRiga(p.titolo)}</b>
+    <div class="cambio"><code>${esc(p.al_posto_di)}</code> → <code>${esc(p.modello)}</code></div>
+    <div class="motivo">${esc(FASCE[p.fascia] || p.fascia)}${tasto} · ${p.provato_sul_banco ? '<span class="stato bene">Provato sul banco</span>' : '<span class="stato attenzione">Non provato</span>'}</div>
+    <details class="resoconto"><summary>Prezzi, privacy e fonti</summary>
+      <p><b>Perché.</b> ${mdRiga(p.perche)}</p><p><b>Prezzi.</b> ${mdRiga(p.prezzi)}</p><p><b>Dove vanno le foto.</b> ${mdRiga(p.privacy)}</p>
+      ${(p.fonti || []).length ? `<ul>${p.fonti.map((f) => `<li><a href="${esc(f)}" target="_blank" rel="noopener">${esc(String(f).replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</a></li>`).join('')}</ul>` : ''}
+    </details></li>`;
+}
+function paginaModelli(d) {
+  const giri = d.scout || [];
+  const [ultimo, ...prima] = giri;
+  const app = giri.find((g) => g.dati?.app)?.dati.app;
+  const prossimo = `<p class="sotto" style="margin:8px 0 0">Prossimo controllo: ${prossimoLunedi()} dalle 21, sul PC con la cartella dell'app.</p>`;
+  if (!ultimo) return `<section class="scheda"><h2>Modelli AI</h2><p class="vuoto">Lo Scout AI non ha ancora fatto il primo giro.</p>${prossimo}</section>`;
+  const proposte = ultimo.dati?.proposte || [];
+  const novita = proposte.length ? `<span class="stato attenzione">${proposte.length === 1 ? 'Una proposta' : `${proposte.length} proposte`}</span>` : '<span class="stato bene">Nessuna novità</span>';
+  const inUso = app ? `<section class="scheda"><h2>Nell'app oggi</h2><p class="sotto">Letto dai file dell'app ${fa(giri.find((g) => g.dati?.app).alle)}</p>
+      ${tabella([['Fascia'], ['Modello']], (app.a_pagamento || []).map((m) => [esc(m.nome || m.id) + (m.id === app.predefinito ? ' <span class="quando">(di base)</span>' : ''), `<code>${esc(m.id)}</code>`])
+        .concat(app.gratuita?.trova ? [['AI gratuita', `<code>${esc(app.gratuita.trova)}</code>`]] : []))}</section>`
+    : '';
+  return `<div class="griglia">
+    <section class="scheda"><h2>Ultimo controllo ${novita}</h2><p class="sotto">Lo Scout AI, ${fa(ultimo.alle)}. Guarda se Verifica, Suggerimento e Domanda usano ancora i modelli migliori per quello che costano</p>
+      ${proposte.length ? `<ul class="elenco">${proposte.map(schedaProposta).join('')}</ul>
+      <p class="sotto" style="margin:8px 0 0">Se una proposta vi convince, ditelo alla chat dell'app: lo Scout non tocca mai l'app.</p>` : ''}
+      ${ultimo.dati?.resoconto ? resocontoCorto(ultimo.dati.resoconto, 'Leggi il resoconto') : `<p>${mdRiga(ultimo.motivo)}</p>`}
+      ${(ultimo.dati?.controllati || []).length ? `<details class="resoconto"><summary>Modelli controllati (${ultimo.dati.controllati.length})</summary><p>${ultimo.dati.controllati.map((m) => `<code>${esc(m)}</code>`).join(' ')}</p></details>` : ''}
+      ${prossimo}</section>
+    ${inUso}
+    <section class="scheda"><h2>Controlli prima</h2>${prima.length ? `<ul class="elenco">${prima.map((g) => `<li>${esc(g.decisione)} <span class="quando">${fa(g.alle)}</span>`
+      + `${(g.dati?.proposte || []).map((p) => `<div class="motivo">${mdRiga(p.titolo)}</div>`).join('')}`
+      + (g.dati?.resoconto ? `<details class="resoconto"><summary>Leggi</summary>${markdown(g.dati.resoconto)}</details>` : '') + '</li>').join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
+  </div>`;
 }
 
 function paginaSistema(d) {
@@ -971,7 +1056,7 @@ function paginaResoconti(d) {
   const quaderno = (d.quaderno || [])[0];
   return `<div class="griglia">
     <section class="scheda"><h2>Ultimo giro${svolta(ultimo)}</h2><p class="sotto">${chi}, ${fa(ultimo.alle)}${ultimo.pc ? `, dal ${esc(ultimo.pc)}` : ''}</p>
-      <div class="resoconto">${markdown(ultimo.testo)}</div></section>
+      ${resocontoCorto(ultimo.testo)}</section>
     <section class="scheda"><h2>Domande aperte</h2><p class="sotto">Quello che chiede a Ettore e Matteo. Si risponde dalla chat con Claude, non da qui</p>
       ${domande ? `<ul class="elenco">${domande}</ul>` : '<p class="vuoto">Nessuna: sta decidendo da solo.</p>'}</section>
     ${quaderno ? `<section class="scheda"><h2>Il suo quaderno</h2><p class="sotto">Gli appunti che si lascia da un giro all'altro, scritti ${fa(quaderno.alle)}</p>
@@ -1120,7 +1205,7 @@ let attiva = 'oggi';
 let sb = null;
 
 const PAGINE = { oggi: paginaOggi, uscite: paginaCoda, fatti: paginaVideo, risultati: paginaRisultati, app: paginaApp, social: paginaSocial,
-  resoconti: paginaResoconti, esperimenti: paginaEsperimenti, decisioni: paginaDecisioni, commenti: paginaCommenti, richieste: paginaRichieste, sistema: paginaSistema };
+  resoconti: paginaResoconti, esperimenti: paginaEsperimenti, decisioni: paginaDecisioni, commenti: paginaCommenti, richieste: paginaRichieste, modelli: paginaModelli, sistema: paginaSistema };
 const DISEGNI = { app: disegnaApp, social: disegnaSocial, risultati: disegnaRisultati };
 
 // I segni rossi sulla barra: quello che aspetta una persona (domande del Direttore e avvisi gravi; commenti da decidere).
