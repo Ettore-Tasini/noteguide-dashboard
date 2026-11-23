@@ -50,6 +50,7 @@ const fmtNumero = new Intl.NumberFormat('it-IT', { notation: 'compact', maximumF
 const fmtIntero = new Intl.NumberFormat('it-IT');
 const fmtEuro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const fmtDollari = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol' });
+const fmtDollariPiccoli = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 3 });
 const numero = (n) => (n == null ? '–' : fmtNumero.format(n));
 const euro = (n) => (n == null ? '–' : fmtEuro.format(n));
 // I ricavi Apple li dà in dollari («Proceeds in USD»): si mostrano così, senza cambi inventati.
@@ -133,6 +134,8 @@ function datiEsempio() {
     aperture: [3, 2, 1].flatMap((i) => [['ipad', true, 5], ['ipad', false, 8], ['iphone', true, 2], ['iphone', false, 1], ['android-tablet', true, 1]]
       .map(([apparecchio, nuovo, n]) => ({ giorno: isoGiorno(giorniFa(i)), apparecchio, dove: 'app', nuovo, quanti: Math.round(n * (0.5 + caso())) }))),
     costiMese: 0,
+    credito: [['caricato', '', 5], ['speso', '', 0.82], ['oggi', '', 0.11], ['banco', 'PC-ETTORE', 0.04]]
+      .map(([voce, pc, usd]) => ({ giorno: isoGiorno(giorniFa(0)), voce, pc, usd })),
     strategie: [
       { id: 2, alle: new Date(ora - 40 * 60000).toISOString(), svolta: true, pc: 'PC-ETTORE', riassunto: 'Apro «Gag dopo l\'app»: Mago tiene il 63% di visione. Spostati a domani due reel di stasera.',
         testo: '# Resoconto di esempio\n\n## In 3 righe\n- Apro un esperimento: **gag dopo l\'app**.\n- Gli animati restano il formato di base.\n- Due reel di stasera passano a domani: oggi ne sono già usciti quattro.\n\n## Che cosa ho fatto\n- Chiusi 12 avvisi già risolti.\n- Tre storie di studio in testa alla fila dell\'Animatore.' },
@@ -284,10 +287,12 @@ async function datiVeri(sb) {
     // Matteo, 22/11: le decisioni del Capo a parte (una ogni mezz'ora) e i giri dello Scout AI per la pagina Modelli AI.
     sb.from('decisioni').select('alle,decisione,motivo').eq('agente', 'capo').order('alle', { ascending: false }).limit(15),
     sb.from('decisioni').select('*').eq('agente', 'scout').order('alle', { ascending: false }).limit(12),
+    // Ettore, 23/11: il credito OpenRouter (quaderno e banco dello Scout), le righe degli ultimi giorni.
+    sb.from('credito_openrouter').select('giorno,voce,pc,usd').gte('giorno', isoGiorno(giorniFa(7))).order('giorno'),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, credito] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -325,7 +330,7 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
-    domande, quaderno, fila, conosciuto, aperture, capo, scout,
+    domande, quaderno, fila, conosciuto, aperture, capo, scout, credito,
     // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
     usciteOggi: pubblicazioni.filter((p) => giornoQui(p.pubblicata_alle) === giornoQui(new Date())).map((p) => ({ piattaforma: p.piattaforma,
       quando: p.pubblicata_alle, url: p.url, titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo' })),
@@ -712,6 +717,23 @@ function schedaStima(st) {
     </section>`;
 }
 
+// Il credito OpenRouter (Ettore, 23/11/2026): la stessa chiave per l'AI gratuita del quaderno e per il banco dello
+// Scout. Giorno di OpenRouter = UTC, quindi «oggi» parte all'1:00 (le 2:00 d'estate). Sotto 1 $ il gestionale avvisa.
+function schedaCredito(righe) {
+  const testa = '<section class="scheda tessera"><div class="etichetta">Credito OpenRouter';
+  const giorni = [...new Set((righe || []).filter((r) => r.voce === 'caricato').map((r) => r.giorno))].sort();
+  const g = giorni.at(-1);
+  if (!g) return `${testa}</div><div class="valore">–</div><div class="delta">Si legge ogni mezz'ora: ancora nessuna lettura</div></section>`;
+  const di = (voce) => righe.filter((r) => r.giorno === g && r.voce === voce).reduce((s, r) => s + Number(r.usd), 0);
+  const resta = di('caricato') - di('speso');
+  const banco = di('banco');
+  const quaderno = Math.max(0, di('oggi') - banco);
+  const piccoli = (n) => fmtDollariPiccoli.format(n);
+  return `${testa}, resta</div><div class="valore">${dollari(resta)}</div>
+      <div class="delta">${resta < 1 ? '<strong>Basso: sotto 1 $.</strong> ' : ''}Caricati ${dollari(di('caricato'))}, spesi ${dollari(di('speso'))}.
+        Oggi: quaderno ${piccoli(quaderno)}, banco ${piccoli(banco)}</div></section>`;
+}
+
 function paginaApp(d) {
   const ultimo = d.app.giorni.at(-1);
   const ricavi30 = d.app.giorni.slice(-30).reduce((s, g) => s + g.ricavi, 0);
@@ -719,6 +741,7 @@ function paginaApp(d) {
       <section class="scheda tessera"><div class="etichetta">Utenti attivi${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div><div class="valore">${ultimo ? numero(ultimo.dispositivi) : '–'}</div></section>
       <section class="scheda tessera"><div class="etichetta">Ricavi netti, 30 giorni</div><div class="valore">${dollari(ricavi30)}</div></section>
       <section class="scheda tessera"><div class="etichetta">Costi del mese</div><div class="valore">${euro(d.costiMese)}</div></section>
+      ${schedaCredito(d.credito)}
     </div><div class="griglia">
     ${schedaGrafico('imbuto', 'Dal video al download', 'Visite al profilo, alla pagina dell\'app e download, per giorno', righeImbuto(ogniMille(d.app.imbuto || [])),
       'Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download. I numeri di Apple arrivano dopo circa 2 giorni.')}
