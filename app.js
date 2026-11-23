@@ -43,6 +43,8 @@ const TASTI = { verifica: 'Verifica', suggerimento: 'Suggerimento', domanda: 'Do
 const CONOSCIUTO = { instagram: 'Instagram', store: 'App Store', tiktok: 'TikTok', youtube: 'YouTube', passaparola: 'Passaparola', altro: 'Altro' };
 // Le prime aperture dell'app, per apparecchio: un +1 anonimo per dispositivo (Ettore, 22/11/2026).
 const APPARECCHI = { ipad: 'iPad', iphone: 'iPhone', 'android-tablet': 'Tablet Android', 'android-telefono': 'Telefono Android', computer: 'Computer' };
+// Le chiusure improvvise dell'app (dal 23/11): contano quelle a schermo, cioè mentre la persona la stava usando.
+const STATI_CHIUSURA = { a_schermo: 'A schermo', in_sottofondo: 'In sottofondo', non_si_sa: 'Non si sa' };
 const nomiPaesi = new Intl.DisplayNames(['it'], { type: 'region' });
 const nomePaese = (codice) => { try { return nomiPaesi.of(codice); } catch { return codice; } };
 
@@ -133,6 +135,8 @@ function datiEsempio() {
         testi: voce === 'altro' ? ['un volantino a scuola'] : [] }))),
     aperture: [3, 2, 1].flatMap((i) => [['ipad', true, 5], ['ipad', false, 8], ['iphone', true, 2], ['iphone', false, 1], ['android-tablet', true, 1]]
       .map(([apparecchio, nuovo, n]) => ({ giorno: isoGiorno(giorniFa(i)), apparecchio, dove: 'app', nuovo, quanti: Math.round(n * (0.5 + caso())) }))),
+    chiusure: [['ipad', 'a_schermo', 'scrivo: penna', 2], ['ipad', 'in_sottofondo', '', 3], ['android-tablet', 'a_schermo', 'tele NxN', 1]]
+      .map(([apparecchio, stato, faceva, quanti]) => ({ giorno: isoGiorno(giorniFa(0)), apparecchio, dove: 'app', stato, faceva, versione: '1.0', quanti, tele_max: 12 })),
     costiMese: 0,
     credito: [['caricato', '', 5], ['speso', '', 0.82], ['oggi', '', 0.11], ['banco', 'PC-ETTORE', 0.04]]
       .map(([voce, pc, usd]) => ({ giorno: isoGiorno(giorniFa(0)), voce, pc, usd })),
@@ -288,11 +292,12 @@ async function datiVeri(sb) {
     sb.from('decisioni').select('alle,decisione,motivo').eq('agente', 'capo').order('alle', { ascending: false }).limit(15),
     sb.from('decisioni').select('*').eq('agente', 'scout').order('alle', { ascending: false }).limit(12),
     // Ettore, 23/11: il credito OpenRouter (quaderno e banco dello Scout), le righe degli ultimi giorni.
+    tutte(() => sb.from('chiusure_app').select('giorno,apparecchio,dove,stato,faceva,versione,quanti,tele_max', conta).gte('giorno', da).order('giorno')),
     sb.from('credito_openrouter').select('giorno,voce,pc,usd').gte('giorno', isoGiorno(giorniFa(7))).order('giorno'),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, credito] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -330,7 +335,7 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
-    domande, quaderno, fila, conosciuto, aperture, capo, scout, credito,
+    domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito,
     // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
     usciteOggi: pubblicazioni.filter((p) => giornoQui(p.pubblicata_alle) === giornoQui(new Date())).map((p) => ({ piattaforma: p.piattaforma,
       quando: p.pubblicata_alle, url: p.url, titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo' })),
@@ -753,6 +758,8 @@ function paginaApp(d) {
     ${schedaGrafico('paesi', 'Da quali paesi', 'Primi download degli ultimi 90 giorni')}
     ${schedaGrafico('conosciuto', 'Come hanno conosciuto NoteGuide', `Le risposte alla domanda che l'app fa alla prima apertura${d.conosciuto.length ? `, dal ${giorno(d.conosciuto[0].giorno)}` : ''}. Chi non risponde non conta. Nella tabella, per giorno, con le frasi scritte in «Altro»`)}
     ${schedaGrafico('aperture', 'Prime aperture dell\'app', `Ogni dispositivo conta una volta, la prima volta che apre NoteGuide${d.aperture.length ? `, dal ${giorno(d.aperture[0].giorno)}` : ' (il contatore parte quando l\'app lo pubblica)'}. Nel grafico i nuovi; nella tabella, per giorno, nuovi / già in uso (chi l\'app ce l\'aveva e la riapre). Chi non la apre non c\'è: quello lo sa solo Apple`)}
+    ${schedaGrafico('chiusure', "Chiusure improvvise dell'app", `L'app che muore da sola, contata quando si riapre${d.chiusure.length ? `, dal ${giorno(d.chiusure[0].giorno)}` : ' (dal 23/11: ancora nessuna)'}. Nel grafico, per giorno, quelle a schermo: la persona la stava usando`, '',
+      "A schermo: è morta mentre la si usava, sono quelle che contano. In sottofondo: di solito l'ha chiusa il sistema o chi la usava. Non si sa: le scatole nere di prima del 23/11. Play non le segna, perché la pagina che muore dentro Chrome non conta come crash. Quando quelle a schermo crescono arriva un avviso.")}
     ${schedaGrafico('tasti', 'I tasti dell\'app, dal più usato', `Quante volte si sceglie una voce dalla tendina di Verifica, Suggerimento e Domanda${d.tasti.length ? `, dal ${giorno(d.tasti[0].giorno)}` : ''}. Solo il numero, non chi li preme; il tutorial non conta`)}
   </div>`;
 }
@@ -796,6 +803,13 @@ function disegnaApp(d) {
   tabelle.aperture = () => tabella([['Giorno'], ...Object.values(APPARECCHI).map((n) => [n, 1])], giorniAperture.map((ga) => [giorno(ga),
     ...Object.keys(APPARECCHI).map((k) => `${fmtIntero.format(quanteAperture((x) => x.giorno === ga && x.apparecchio === k && x.nuovo))} / `
       + fmtIntero.format(quanteAperture((x) => x.giorno === ga && x.apparecchio === k && !x.nuovo)))]));
+  const giorniChiusure = [...new Set(d.chiusure.map((x) => x.giorno))].sort();
+  colonne(document.getElementById('g-chiusure'), giorniChiusure.map(giorno),
+    giorniChiusure.map((gc) => d.chiusure.filter((x) => x.giorno === gc && x.stato === 'a_schermo').reduce((s, x) => s + x.quanti, 0)), colore, numero);
+  tabelle.chiusure = () => tabella([['Giorno'], ['Apparecchio'], ['Dove'], ['Quando'], ['Stava facendo'], ['Versione'], ['Quante', 1], ['MB di disegno', 1]],
+    [...d.chiusure].sort((a, b) => b.giorno.localeCompare(a.giorno) || a.stato.localeCompare(b.stato)).map((x) => [giorno(x.giorno),
+      esc(APPARECCHI[x.apparecchio] || x.apparecchio), esc(x.dove), STATI_CHIUSURA[x.stato] || esc(x.stato), esc(x.faceva || '–'), esc(x.versione || '–'),
+      fmtIntero.format(x.quanti), x.tele_max == null ? '–' : fmtIntero.format(Math.round(Number(x.tele_max)))]));
   tabelle.paesi = () => tabella([['Paese'], ['Download', 1]], d.app.paesi.map((x) => [esc(x.paese), fmtIntero.format(x.download)]));
   linee(document.getElementById('g-attivi'), [{ nome: 'Utenti attivi', colore, punti: g.map((x) => [x.giorno, x.dispositivi]) }]);
   // Solo settimane complete (da lunedì a domenica), così la prima e l'ultima non sembrano un calo.
