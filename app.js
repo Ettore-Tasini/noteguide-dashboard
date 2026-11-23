@@ -266,7 +266,7 @@ async function datiVeri(sb) {
     sb.from('decisioni').select('*').not('agente', 'in', '(capo,scout)').order('alle', { ascending: false }).limit(100),
     sb.from('pc').select('*').order('ultimo_battito', { ascending: false }),
     sb.from('interruttori').select('*').order('nome'),
-    sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note,pubblicazioni(stato))')
+    sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note,variabili,pubblicazioni(stato))')
       .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
     tutte(() => sb.from('tasti_app').select('giorno,tasto,quanti', conta).gte('giorno', da).order('giorno').order('tasto')),
     sb.from('richieste').select('*').order('creata_alle', { ascending: false }).limit(30),
@@ -346,7 +346,8 @@ async function datiVeri(sb) {
         url: p.url, vis: ultimaVista.get(p.id) ?? null })) })),
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
       video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video,
-      uscito: (p.video?.pubblicazioni || []).some((x) => x.stato === 'pubblicata') }))),
+      uscito: (p.video?.pubblicazioni || []).some((x) => x.stato === 'pubblicata'),
+      esperimento: p.video?.variabili?.esperimento ?? null, materia: p.video?.variabili?.materia || '' }))),
   };
 }
 
@@ -354,7 +355,8 @@ async function datiVeri(sb) {
 function raggruppaCoda(righe) {
   const perVideo = new Map();
   for (const r of righe) {
-    const v = perVideo.get(r.video) || { titolo: r.titolo || 'Video senza titolo', copertina: r.copertina, url: r.url, uscito: r.uscito, uscite: [] };
+    const v = perVideo.get(r.video) || { titolo: r.titolo || 'Video senza titolo', copertina: r.copertina, url: r.url, uscito: r.uscito,
+      esperimento: r.esperimento, materia: r.materia, uscite: [] };
     v.uscite.push({ piattaforma: r.piattaforma, stato: r.stato, quando: r.quando, didascalia: r.didascalia });
     perVideo.set(r.video, v);
   }
@@ -893,25 +895,60 @@ function disegnaSocial(d) {
 
 const ora = (d) => new Date(d).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-// Ettore, 23/11: qui solo i video che non sono ancora usciti; appena un video esce su un social sparisce, anche se
-// ha ancora un'uscita in programma altrove (quelle restano contate nella pagina Oggi).
+// Ettore, 23/11: i video da pubblicare in cartelle. Prima il social (Instagram, YouTube, TikTok); dentro, una cartella
+// per esperimento (o per materia, se un video non ha esperimento); dentro, i video in ordine di uscita. In ogni social
+// c'è solo quello che lì deve ancora uscire. «Semplice da leggere, senza troppe cose complicate.»
+const cartelleAperte = new Set(['instagram']);
+document.addEventListener('toggle', (e) => {
+  const id = e.target.dataset?.cartella;
+  if (!id) return;
+  if (e.target.open) cartelleAperte.add(id); else cartelleAperte.delete(id);
+}, true);
+
+const nomeMateria = (m) => {
+  const t = String(m || '').split('(')[0].trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : 'Altro';
+};
+
+function schedaCoda({ v, u }) {
+  const player = v.url
+    ? `<video class="video-coda" controls playsinline preload="none" ${v.copertina ? `poster="${esc(v.copertina)}"` : ''} src="${esc(v.url)}"></video>`
+    : '<div class="video-coda vuoto">Video non ancora caricato</div>';
+  const argomento = String(v.materia || '').trim();
+  return `<section class="scheda voce-coda"><div class="media-coda">${player}</div>
+    <div class="testo-coda"><h2>${esc(v.titolo.replace(/^NoteGuide-/, ''))}</h2>
+      <div class="uscita"><div class="quando"><strong>${u.quando ? esc(ora(u.quando)) : 'in caricamento'}</strong>${argomento ? ` · ${esc(argomento)}` : ''}</div>
+      ${u.didascalia ? `<details><summary>Leggi la descrizione</summary><p class="didascalia">${esc(u.didascalia)}</p></details>` : ''}</div></div></section>`;
+}
+
 function paginaCoda(d) {
-  const daUscire = d.coda.filter((v) => !v.uscito);
-  if (!daUscire.length) return '<section class="scheda"><h2>In uscita</h2><p class="vuoto">Nessun video in programma.</p></section>';
-  const schede = daUscire.map((v) => {
-    const uscite = v.uscite.map((u) => `<div class="uscita">
-        <div class="quando"><span class="punto" style="background:${css(u.piattaforma)}"></span><strong>${esc(PIATTAFORME[u.piattaforma])}</strong> · ${u.quando ? esc(ora(u.quando)) : 'in caricamento'}</div>
-        ${u.didascalia ? `<details><summary>Leggi la descrizione</summary><p class="didascalia">${esc(u.didascalia)}</p></details>` : ''}
-      </div>`).join('');
-    const player = v.url
-      ? `<video class="video-coda" controls playsinline preload="none" ${v.copertina ? `poster="${esc(v.copertina)}"` : ''} src="${esc(v.url)}"></video>`
-      : '<div class="video-coda vuoto">Video non ancora caricato</div>';
-    const copertina = v.copertina
-      ? `<figure class="copertina"><img src="${esc(v.copertina)}" alt="Copertina di ${esc(v.titolo)}" loading="lazy"><figcaption>Copertina</figcaption></figure>` : '';
-    return `<section class="scheda voce-coda"><div class="media-coda">${player}${copertina}</div>
-      <div class="testo-coda"><h2>${esc(v.titolo)}</h2>${uscite}</div></section>`;
+  const esperimenti = new Map((d.esperimenti || []).map((e) => [Number(e.id), e]));
+  const cartelle = ['instagram', 'youtube', 'tiktok'].map((p) => {
+    const voci = d.coda.flatMap((v) => v.uscite.filter((u) => u.piattaforma === p).map((u) => ({ v, u })))
+      .sort((a, b) => String(a.u.quando || '9999').localeCompare(String(b.u.quando || '9999')));
+    if (!voci.length) return '';
+    const gruppi = new Map();
+    for (const x of voci) {
+      const e = x.v.esperimento != null ? esperimenti.get(Number(x.v.esperimento)) : null;
+      const id = e ? `e${e.id}` : `m-${nomeMateria(x.v.materia)}`;
+      if (!gruppi.has(id)) {
+        gruppi.set(id, { id, nome: e ? e.nome : nomeMateria(x.v.materia),
+          sotto: e ? (e.stato === 'in_corso' ? 'Esperimento in corso' : 'Esperimento chiuso') : 'Senza esperimento', voci: [] });
+      }
+      gruppi.get(id).voci.push(x);
+    }
+    const sotto = [...gruppi.values()].map((g) => {
+      const chiave = `${p}-${g.id}`;
+      return `<details class="cartella sotto-cartella" data-cartella="${esc(chiave)}"${cartelleAperte.has(chiave) ? ' open' : ''}>
+        <summary><span class="nome-cartella">${esc(g.nome)}</span><span class="info-cartella">${esc(g.sotto)} · ${g.voci.length} video ${g.voci[0].u.quando ? ` · il primo ${esc(ora(g.voci[0].u.quando))}` : ''}</span></summary>
+        <div class="dentro-cartella">${g.voci.map(schedaCoda).join('')}</div></details>`;
+    }).join('');
+    return `<details class="cartella" data-cartella="${p}"${cartelleAperte.has(p) ? ' open' : ''}>
+      <summary><span class="nome-cartella"><span class="punto" style="background:${css(p)}"></span>${esc(PIATTAFORME[p])}</span><span class="info-cartella">${voci.length} video${voci.some((x) => x.u.quando) ? ` · fino al ${esc(giorno(voci.filter((x) => x.u.quando).at(-1).u.quando))}` : ''}</span></summary>
+      <div class="dentro-cartella">${sotto}</div></details>`;
   }).join('');
-  return `<p class="sotto intro-coda">I video programmati che non sono ancora usciti, compresi quelli degli esperimenti, prima quelli di Instagram: escono da soli all'ora scritta, anche a PC spenti. Appena un video esce sparisce da qui.</p>${schede}`;
+  if (!cartelle) return '<section class="scheda"><h2>In uscita</h2><p class="vuoto">Nessun video in programma.</p></section>';
+  return `<p class="sotto intro-coda">I video in programma, divisi per social e per esperimento. Tocca una cartella per aprirla. Escono da soli all'ora scritta; appena un video esce su un social sparisce da quella cartella.</p>${cartelle}`;
 }
 
 // I video prodotti, dal più nuovo: la copertina, a che punto sono e come sono andati su ogni social.

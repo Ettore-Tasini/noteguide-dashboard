@@ -356,6 +356,18 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-
 
 /* In uscita: il video (9:16) e la copertina a sinistra, le uscite con la descrizione a destra */
 .intro-coda { margin: 0 0 12px; color: var(--testo-2); font-size: 14.5px; }
+/* Le cartelle dei video in uscita (Ettore, 23/11): social, poi esperimento, poi i video. */
+.cartella { background: var(--superficie); border: 1px solid var(--bordo); border-radius: 12px; margin-bottom: 10px; }
+.cartella > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 14px 16px; }
+.cartella > summary::-webkit-details-marker { display: none; }
+.cartella > summary::before { content: "▸"; color: var(--muto); margin-right: 2px; }
+.cartella[open] > summary::before { content: "▾"; }
+.nome-cartella { font-weight: 650; font-size: 17px; display: inline-flex; align-items: center; gap: 8px; flex: 1 1 auto; }
+.info-cartella { color: var(--testo-2); font-size: 14px; }
+.dentro-cartella { padding: 0 12px 12px; }
+.sotto-cartella { background: var(--pagina); border-color: var(--griglia); }
+.sotto-cartella .nome-cartella { font-size: 15.5px; }
+.dentro-cartella .voce-coda { margin-bottom: 8px; }
 .voce-coda { display: grid; gap: 16px; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); margin-bottom: 12px; align-items: start; }
 .media-coda { display: grid; gap: 10px; grid-template-columns: 1fr 96px; align-items: start; }
 .video-coda { width: 100%; aspect-ratio: 9 / 16; border-radius: 10px; background: #000; display: block; }
