@@ -6,7 +6,7 @@ const PIATTAFORME = { instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTub
 const SEZIONI = [
   { id: 'oggi', nome: 'Oggi', icona: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3v4M15.5 3v4"/>', pagine: [['oggi', 'Oggi']] },
   { id: 'video', nome: 'Video', icona: '<rect x="5.5" y="3" width="13" height="18" rx="2.5"/><path d="M10.5 9.2v5.6l4.6-2.8z"/>',
-    pagine: [['uscite', 'In uscita'], ['fatti', 'Fatti'], ['risultati', 'Come sono andati']] },
+    pagine: [['uscite', 'In uscita'], ['fatti', 'Da far uscire'], ['risultati', 'Come sono andati']] },
   { id: 'numeri', nome: 'Numeri', icona: '<path d="M3.5 20h17M6.5 20v-7M12 20V5M17.5 20v-10"/>', pagine: [['app', 'App'], ['social', 'Social']] },
   { id: 'direttore', nome: 'Direttore', icona: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c.8-4.2 3.5-6.3 7-6.3s6.2 2.1 7 6.3"/>',
     pagine: [['resoconti', 'Resoconti'], ['esperimenti', 'Esperimenti'], ['decisioni', 'Decisioni']] },
@@ -266,7 +266,7 @@ async function datiVeri(sb) {
     sb.from('decisioni').select('*').not('agente', 'in', '(capo,scout)').order('alle', { ascending: false }).limit(100),
     sb.from('pc').select('*').order('ultimo_battito', { ascending: false }),
     sb.from('interruttori').select('*').order('nome'),
-    sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note)')
+    sb.from('pubblicazioni').select('piattaforma,stato,programmata_per,didascalia,video_id,video(titolo,anteprima,note,pubblicazioni(stato))')
       .in('stato', ['in_corso', 'programmata']).order('programmata_per'),
     tutte(() => sb.from('tasti_app').select('giorno,tasto,quanti', conta).gte('giorno', da).order('giorno').order('tasto')),
     sb.from('richieste').select('*').order('creata_alle', { ascending: false }).limit(30),
@@ -345,7 +345,8 @@ async function datiVeri(sb) {
       uscite: v.pubblicazioni.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.pubblicata_alle || p.programmata_per,
         url: p.url, vis: ultimaVista.get(p.id) ?? null })) })),
     coda: raggruppaCoda(inCoda.map((p) => ({ piattaforma: p.piattaforma, stato: p.stato, quando: p.programmata_per, didascalia: p.didascalia,
-      video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video }))),
+      video: p.video_id, titolo: p.video?.titolo, copertina: p.video?.anteprima, url: p.video?.note?.url_video,
+      uscito: (p.video?.pubblicazioni || []).some((x) => x.stato === 'pubblicata') }))),
   };
 }
 
@@ -353,12 +354,22 @@ async function datiVeri(sb) {
 function raggruppaCoda(righe) {
   const perVideo = new Map();
   for (const r of righe) {
-    const v = perVideo.get(r.video) || { titolo: r.titolo || 'Video senza titolo', copertina: r.copertina, url: r.url, uscite: [] };
+    const v = perVideo.get(r.video) || { titolo: r.titolo || 'Video senza titolo', copertina: r.copertina, url: r.url, uscito: r.uscito, uscite: [] };
     v.uscite.push({ piattaforma: r.piattaforma, stato: r.stato, quando: r.quando, didascalia: r.didascalia });
     perVideo.set(r.video, v);
   }
-  const prima = (v) => v.uscite.map((u) => u.quando || '9999').sort()[0];
-  return [...perVideo.values()].sort((a, b) => prima(a).localeCompare(prima(b)));
+  return [...perVideo.values()].map((v) => ({ ...v, uscite: primaInstagram(v.uscite) })).sort(ordineInstagram);
+}
+
+// Ettore, 23/11: «la priorità sia data a quelli su Instagram». Prima i video con un'uscita su Instagram, in ordine di
+// ora su Instagram; poi gli altri, in ordine di prima uscita. Dentro ogni video, Instagram in cima.
+const primaInstagram = (uscite) => [...uscite].sort((a, b) => (b.piattaforma === 'instagram') - (a.piattaforma === 'instagram')
+  || String(a.quando || '9999').localeCompare(String(b.quando || '9999')));
+function ordineInstagram(a, b) {
+  const ig = (v) => v.uscite.filter((u) => u.piattaforma === 'instagram').map((u) => u.quando || '9999').sort()[0];
+  const prima = (v) => v.uscite.map((u) => u.quando || '9999').sort()[0] || '9999';
+  if (!!ig(a) !== !!ig(b)) return ig(a) ? -1 : 1;
+  return (ig(a) || prima(a)).localeCompare(ig(b) || prima(b));
 }
 
 // ---------------------------------------------------------------- grafici
@@ -882,9 +893,12 @@ function disegnaSocial(d) {
 
 const ora = (d) => new Date(d).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
+// Ettore, 23/11: qui solo i video che non sono ancora usciti; appena un video esce su un social sparisce, anche se
+// ha ancora un'uscita in programma altrove (quelle restano contate nella pagina Oggi).
 function paginaCoda(d) {
-  if (!d.coda.length) return '<section class="scheda"><h2>In uscita</h2><p class="vuoto">Nessun video in programma.</p></section>';
-  const schede = d.coda.map((v) => {
+  const daUscire = d.coda.filter((v) => !v.uscito);
+  if (!daUscire.length) return '<section class="scheda"><h2>In uscita</h2><p class="vuoto">Nessun video in programma.</p></section>';
+  const schede = daUscire.map((v) => {
     const uscite = v.uscite.map((u) => `<div class="uscita">
         <div class="quando"><span class="punto" style="background:${css(u.piattaforma)}"></span><strong>${esc(PIATTAFORME[u.piattaforma])}</strong> · ${u.quando ? esc(ora(u.quando)) : 'in caricamento'}</div>
         ${u.didascalia ? `<details><summary>Leggi la descrizione</summary><p class="didascalia">${esc(u.didascalia)}</p></details>` : ''}
@@ -897,7 +911,7 @@ function paginaCoda(d) {
     return `<section class="scheda voce-coda"><div class="media-coda">${player}${copertina}</div>
       <div class="testo-coda"><h2>${esc(v.titolo)}</h2>${uscite}</div></section>`;
   }).join('');
-  return `<p class="sotto intro-coda">I video programmati: escono da soli all'ora scritta, anche a PC spenti. Il video e la copertina restano qui finché non sono usciti dappertutto.</p>${schede}`;
+  return `<p class="sotto intro-coda">I video programmati che non sono ancora usciti, compresi quelli degli esperimenti, prima quelli di Instagram: escono da soli all'ora scritta, anche a PC spenti. Appena un video esce sparisce da qui.</p>${schede}`;
 }
 
 // I video prodotti, dal più nuovo: la copertina, a che punto sono e come sono andati su ogni social.
@@ -905,17 +919,15 @@ const STATI_VIDEO = { idea: 'Idea', in_lavorazione: 'In lavorazione', in_revisio
   in_coda: 'In coda', uscito: 'Uscito', analizzato: 'Analizzato' };
 const USCITE = { pubblicata: ['bene', 'Uscito'], programmata: ['attenzione', 'Programmato'], in_corso: ['attenzione', 'In caricamento'], errore: ['grave', 'Errore'] };
 
-let filtroVideo = 'tutti';
-const FILTRI_VIDEO = [['tutti', 'Tutti'], ['usciti', 'Usciti'], ['coda', 'Da far uscire'], ['bocciati', 'Bocciati']];
-
+// Ettore, 23/11: «voglio vedere solo quelli» che non sono ancora usciti (compresi quelli degli esperimenti); i video già
+// usciti, anche su un solo social, e i bocciati non si vedono più. I numeri dei video usciti restano in Risultati.
 function paginaVideo(d) {
-  if (!d.video.length) return '<section class="scheda"><h2>Video</h2><p class="vuoto">Nessun video prodotto.</p></section>';
-  // Un video resta «in_coda» anche dopo le prime uscite: se è già uscito da qualche parte si dice così.
+  // Un video resta «in_coda» anche dopo le prime uscite: se è già uscito da qualche parte non si mostra.
   const statoVero = (v) => (v.stato === 'in_coda' && v.uscite.some((u) => u.stato === 'pubblicata') ? 'uscito' : v.stato);
-  const gruppo = (v) => ({ uscito: 'usciti', analizzato: 'usciti', bocciato: 'bocciati' }[statoVero(v)] || 'coda');
-  const quanti = (id) => (id === 'tutti' ? d.video.length : d.video.filter((v) => gruppo(v) === id).length);
-  const filtri = `<div class="filtri">${FILTRI_VIDEO.map(([id, nome]) => `<button data-filtro="${id}" aria-pressed="${id === filtroVideo}">${nome} <span class="quando">${quanti(id)}</span></button>`).join('')}</div>`;
-  const schede = d.video.filter((v) => filtroVideo === 'tutti' || gruppo(v) === filtroVideo).map((v) => {
+  const daUscire = d.video.filter((v) => !['uscito', 'analizzato', 'bocciato'].includes(statoVero(v)))
+    .map((v) => ({ ...v, uscite: primaInstagram(v.uscite) })).sort(ordineInstagram);
+  if (!daUscire.length) return '<section class="scheda"><h2>Video</h2><p class="vuoto">Nessun video da far uscire.</p></section>';
+  const schede = daUscire.map((v) => {
     const stato = statoVero(v);
     const colore = { bocciato: 'grave', uscito: 'bene', analizzato: 'bene', in_revisione: 'attenzione' }[stato] || '';
     const uscite = v.uscite.map((u) => {
@@ -934,7 +946,7 @@ function paginaVideo(d) {
         <p class="sotto"><span class="stato ${colore}">${esc(STATI_VIDEO[stato] || stato)}</span> · fatto il ${esc(giorno(v.creato))}</p>
         ${uscite ? `<ul class="uscite-video">${uscite}</ul>` : '<p class="vuoto">Non ancora dato ai social.</p>'}${guarda}</div></section>`;
   }).join('');
-  return `<p class="sotto intro-coda">Gli ultimi ${d.video.length} video prodotti, dal più nuovo. Tocca il nome di un social per aprire il post.</p>${filtri}<div class="griglia-video">${schede || '<p class="vuoto">Nessuno.</p>'}</div>`;
+  return `<p class="sotto intro-coda">I ${daUscire.length} video non ancora usciti, compresi quelli degli esperimenti: prima quelli che escono su Instagram, in ordine di ora. Appena un video esce sparisce da qui.</p><div class="griglia-video">${schede}</div>`;
 }
 
 // Le copertine dei video già usciti dappertutto possono non esserci più nel bucket: al posto dell'immagine rotta, il riquadro vuoto.
@@ -1289,13 +1301,6 @@ function mostra(id, daCapo = false) {
   if (location.hash !== indirizzo) history.replaceState(null, '', indirizzo);
   if (daCapo) scrollTo(0, 0);
 }
-
-document.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-filtro]');
-  if (!b) return;
-  filtroVideo = b.dataset.filtro;
-  mostra('fatti');
-});
 
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-tabella]');
