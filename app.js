@@ -210,6 +210,8 @@ function datiEsempio() {
             modello: 'esempio/modello-nuovo', provato_sul_banco: true, perche: '46 errori su 47, nessun falso allarme.', prezzi: '0,03 centesimi a verifica contro 0,20.',
             privacy: 'Fornitore negli USA, non addestra sui dati.', fonti: ['https://example.com/prezzi'] }] } },
       { alle: new Date(ora - 12 * 86400000).toISOString(), agente: 'scout', decisione: 'Scout AI: controllato, nessuna novità', motivo: 'I modelli di oggi restano i migliori.', dati: {} },
+      { alle: new Date(ora - 6 * 86400000).toISOString(), agente: 'scout', decisione: 'Scout AI del 19/11 (a pagamento): controllato, nessuna novità', motivo: 'Le fasce a pagamento restano le migliori per quello che costano.',
+        dati: { modo: 'pagamento', controllati: ['esempio/modello-caro'], resoconto: '# Scout AI di esempio\n\n## In 3 righe\nControllato, nessuna novità: i prezzi non sono cambiati.' } },
     ],
     pc: [
       { id: 'PC-ETTORE', persona: 'Ettore', ultimo_battito: new Date(ora - 4 * 60000).toISOString(),
@@ -1078,16 +1080,46 @@ function paginaDecisioni(d) {
   return `<div class="griglia"><section class="scheda"><h2>Decisioni degli agenti</h2><p class="sotto">Le scelte prese da soli. Lo Scout AI è in Altro → Modelli AI</p>${elencoDecisioni(d.decisioni)}</section>${capo}</div>`;
 }
 
-// Lo Scout AI (Ettore, 16/11): ogni lunedì sera controlla se i modelli di Verifica, Suggerimento e Domanda dentro
-// NoteGuide sono ancora i migliori per quello che costano. Qui l'ultimo controllo, le proposte e i giri prima
-// (Matteo, 22/11: «stare continuamente aggiornati sui modelli AI»).
+// Lo Scout AI (Ettore, 16/11; due giri dal 25/11, Matteo): l'AI gratuita ogni 3 giorni, con il banco; le fasce a
+// pagamento ogni 2 settimane, solo ricerca. Qui per ognuno l'ultimo controllo, le proposte e i giri prima.
 const FASCE = { gratuita: 'AI gratuita', economico: 'Economico', bilanciato: 'Bilanciato', preciso: 'Preciso' };
-function prossimoLunedi() {
-  const x = new Date();
-  let giorni = (8 - x.getDay()) % 7;
-  if (giorni === 0 && x.getHours() >= 21) giorni = 7;
-  x.setDate(x.getDate() + giorni);
-  return x.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+const GIRI_SCOUT = {
+  gratuita: { ogni: 3, nome: 'AI gratuita', cosa: 'Ogni 3 giorni la sera: i numeri della catena, i modelli poco costosi provati sul banco e i fogli del banco' },
+  pagamento: { ogni: 14, nome: 'A pagamento', cosa: 'Ogni 2 settimane la sera: le fasce che gli studenti pagano, solo ricerca online' },
+};
+// Come il gestionale (`agenti.giri`): i giorni dall'anno 1 divisi per N; il giro è dovuto una sera per periodo.
+function prossimoGiro(ogni, ultimo) {
+  const oggi = new Date();
+  const ordinale = (x) => Math.floor(Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / 864e5) + 719163;
+  const periodo = Math.floor(ordinale(oggi) / ogni);
+  const fatto = ultimo && Math.floor(ordinale(new Date(ultimo.alle)) / ogni) === periodo;
+  if (!fatto) return oggi.getHours() < 21 ? 'stasera dalle 21' : "appena il PC con l'app è acceso, entro pochi giorni";
+  const x = new Date(oggi);
+  x.setDate(x.getDate() + (periodo + 1) * ogni - ordinale(oggi));
+  return `${x.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })} dalle 21`;
+}
+function schedaSoglia(p) {
+  return `<li><b>${mdRiga(p.titolo)}</b><div class="cambio">${esc(p.soglia)}: ${esc(p.oggi)} → <b>${esc(p.proposta)}</b></div>
+    <div class="motivo">${mdRiga(p.perche)}</div></li>`;
+}
+function schedaGiroScout(giri, modo) {
+  const g = GIRI_SCOUT[modo];
+  const [ultimo, ...prima] = giri;
+  const prossimo = `<p class="sotto" style="margin:8px 0 0">Prossimo giro: ${prossimoGiro(g.ogni, ultimo)}, sul PC con la cartella dell'app.</p>`;
+  if (!ultimo) return `<section class="scheda"><h2>Scout AI: ${g.nome}</h2><p class="sotto">${g.cosa}</p><p class="vuoto">Non ha ancora fatto il primo giro.</p>${prossimo}</section>`;
+  const proposte = ultimo.dati?.proposte || [];
+  const soglie = ultimo.dati?.soglie || [];
+  const n = proposte.length + soglie.length;
+  const novita = n ? `<span class="stato attenzione">${n === 1 ? 'Una proposta' : `${n} proposte`}</span>` : '<span class="stato bene">Nessuna novità</span>';
+  return `<section class="scheda"><h2>Scout AI: ${g.nome} ${novita}</h2><p class="sotto">Ultimo giro ${fa(ultimo.alle)}. ${g.cosa}</p>
+      ${n ? `<ul class="elenco">${proposte.map(schedaProposta).join('')}${soglie.map(schedaSoglia).join('')}</ul>
+      <p class="sotto" style="margin:8px 0 0">Se una proposta vi convince, ditelo alla chat dell'app: lo Scout non tocca mai l'app.</p>` : ''}
+      ${ultimo.dati?.resoconto ? resocontoCorto(ultimo.dati.resoconto, 'Leggi il resoconto') : `<p>${mdRiga(ultimo.motivo)}</p>`}
+      ${(ultimo.dati?.controllati || []).length ? `<details class="resoconto"><summary>Modelli controllati (${ultimo.dati.controllati.length})</summary><p>${ultimo.dati.controllati.map((m) => `<code>${esc(m)}</code>`).join(' ')}</p></details>` : ''}
+      ${prima.length ? `<details class="resoconto"><summary>Giri prima (${prima.length})</summary><ul class="elenco">${prima.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span>`
+        + [...(x.dati?.proposte || []), ...(x.dati?.soglie || [])].map((p) => `<div class="motivo">${mdRiga(p.titolo)}</div>`).join('')
+        + (x.dati?.resoconto ? `<details class="resoconto"><summary>Leggi</summary>${markdown(x.dati.resoconto)}</details>` : '') + '</li>').join('')}</ul></details>` : ''}
+      ${prossimo}</section>`;
 }
 function schedaProposta(p) {
   const tasto = p.tasto && p.tasto !== 'tutti' ? ` · ${esc(p.tasto[0].toUpperCase() + p.tasto.slice(1))}` : '';
@@ -1144,31 +1176,16 @@ function schedaCatena(d) {
 }
 
 function paginaModelli(d) {
-  const catena = schedaCatena(d);
   const giri = d.scout || [];
-  const [ultimo, ...prima] = giri;
+  const del_ = (modo) => giri.filter((g) => (g.dati?.modo || 'gratuita') === modo);
   const app = giri.find((g) => g.dati?.app)?.dati.app;
-  const prossimo = `<p class="sotto" style="margin:8px 0 0">Prossimo controllo: ${prossimoLunedi()} dalle 21, sul PC con la cartella dell'app.</p>`;
-  if (!ultimo) return `<div class="griglia">${catena}<section class="scheda"><h2>Modelli AI</h2><p class="vuoto">Lo Scout AI non ha ancora fatto il primo giro.</p>${prossimo}</section></div>`;
-  const proposte = ultimo.dati?.proposte || [];
-  const novita = proposte.length ? `<span class="stato attenzione">${proposte.length === 1 ? 'Una proposta' : `${proposte.length} proposte`}</span>` : '<span class="stato bene">Nessuna novità</span>';
   const inUso = app ? `<section class="scheda"><h2>Nell'app oggi</h2><p class="sotto">Letto dai file dell'app ${fa(giri.find((g) => g.dati?.app).alle)}</p>
-      ${tabella([['Fascia'], ['Modello']], (app.a_pagamento || []).map((m) => [esc(m.nome || m.id) + (m.id === app.predefinito ? ' <span class="quando">(di base)</span>' : ''), `<code>${esc(m.id)}</code>`])
-        .concat(app.gratuita?.trova ? [['AI gratuita', `<code>${esc(app.gratuita.trova)}</code>`]] : []))}</section>`
+      ${tabella([['Fascia'], ['Modello']], (app.a_pagamento || []).map((m) => [esc(m.nome || m.id) + (m.id === app.predefinito ? ' <span class="quando">(di base)</span>' : ''), `<code>${esc(m.id)}</code>`]))}</section>`
     : '';
-  return `<div class="griglia">
-    ${catena}
-    <section class="scheda"><h2>Ultimo controllo ${novita}</h2><p class="sotto">Lo Scout AI, ${fa(ultimo.alle)}. Guarda se Verifica, Suggerimento e Domanda usano ancora i modelli migliori per quello che costano</p>
-      ${proposte.length ? `<ul class="elenco">${proposte.map(schedaProposta).join('')}</ul>
-      <p class="sotto" style="margin:8px 0 0">Se una proposta vi convince, ditelo alla chat dell'app: lo Scout non tocca mai l'app.</p>` : ''}
-      ${ultimo.dati?.resoconto ? resocontoCorto(ultimo.dati.resoconto, 'Leggi il resoconto') : `<p>${mdRiga(ultimo.motivo)}</p>`}
-      ${(ultimo.dati?.controllati || []).length ? `<details class="resoconto"><summary>Modelli controllati (${ultimo.dati.controllati.length})</summary><p>${ultimo.dati.controllati.map((m) => `<code>${esc(m)}</code>`).join(' ')}</p></details>` : ''}
-      ${prossimo}</section>
-    ${inUso}
-    <section class="scheda"><h2>Controlli prima</h2>${prima.length ? `<ul class="elenco">${prima.map((g) => `<li>${esc(g.decisione)} <span class="quando">${fa(g.alle)}</span>`
-      + `${(g.dati?.proposte || []).map((p) => `<div class="motivo">${mdRiga(p.titolo)}</div>`).join('')}`
-      + (g.dati?.resoconto ? `<details class="resoconto"><summary>Leggi</summary>${markdown(g.dati.resoconto)}</details>` : '') + '</li>').join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
-  </div>`;
+  return `<h2 class="titolo-sezione">AI gratuita</h2>
+    <div class="griglia">${schedaCatena(d)}${schedaGiroScout(del_('gratuita'), 'gratuita')}</div>
+    <h2 class="titolo-sezione">A pagamento</h2>
+    <div class="griglia">${schedaGiroScout(del_('pagamento'), 'pagamento')}${inUso}</div>`;
 }
 
 function paginaSistema(d) {
