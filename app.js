@@ -1,8 +1,9 @@
 // Dashboard del gestionale: legge il database dopo il login e disegna le pagine. È pensata per il telefono.
 // Senza configurazione (config.js vuoto) mostra dati di esempio, e lo dice in alto.
 const PIATTAFORME = { instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube' };
-// Cinque sezioni (Ettore, 11/11: «faccio fatica a trovare quello che cerco»): sul telefono stanno in basso, e ognuna
-// ha dentro le sue pagine. Ogni pagina ha un nome solo suo, e l'indirizzo è #sezione/pagina.
+// Le sezioni (Ettore, 11/11: «faccio fatica a trovare quello che cerco»): sul telefono stanno in basso, e ognuna ha
+// dentro le sue pagine. Ogni pagina ha un nome solo suo, e l'indirizzo è #sezione/pagina. Matteo, 25/11: l'AI gratuita
+// fra le sezioni principali, non più in Altro.
 const SEZIONI = [
   { id: 'oggi', nome: 'Oggi', icona: '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M8.5 3v4M15.5 3v4"/>', pagine: [['oggi', 'Oggi']] },
   { id: 'video', nome: 'Video', icona: '<rect x="5.5" y="3" width="13" height="18" rx="2.5"/><path d="M10.5 9.2v5.6l4.6-2.8z"/>',
@@ -10,11 +11,13 @@ const SEZIONI = [
   { id: 'numeri', nome: 'Numeri', icona: '<path d="M3.5 20h17M6.5 20v-7M12 20V5M17.5 20v-10"/>', pagine: [['app', 'App'], ['social', 'Social']] },
   { id: 'direttore', nome: 'Direttore', icona: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20.5c.8-4.2 3.5-6.3 7-6.3s6.2 2.1 7 6.3"/>',
     pagine: [['resoconti', 'Resoconti'], ['esperimenti', 'Esperimenti'], ['decisioni', 'Decisioni']] },
+  { id: 'ai', nome: 'AI', icona: '<path d="M11 3.5l1.8 4.7 4.7 1.8-4.7 1.8L11 16.5l-1.8-4.7L4.5 10l4.7-1.8z"/><path d="M18 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+    pagine: [['gratuita', 'Gratuita'], ['pagamento', 'A pagamento']] },
   { id: 'altro', nome: 'Altro', icona: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
-    pagine: [['commenti', 'Commenti'], ['richieste', 'Richieste'], ['modelli', 'Modelli AI'], ['sistema', 'Sistema']] },
+    pagine: [['commenti', 'Commenti'], ['richieste', 'Richieste'], ['sistema', 'Sistema']] },
 ];
 // Gli indirizzi di prima del rifacimento, per chi li ha salvati («Trend» non c'è più: non è mai stata costruita).
-const VECCHIE = { coda: 'uscite', strategia: 'resoconti', trend: 'oggi' };
+const VECCHIE = { coda: 'uscite', strategia: 'resoconti', trend: 'oggi', modelli: 'gratuita' };
 const sezioneDi = (pagina) => SEZIONI.find((s) => s.pagine.some(([id]) => id === pagina));
 
 // L'ultima pagina guardata in ogni sezione, ricordata su questo dispositivo: è solo una comodità.
@@ -137,7 +140,6 @@ function datiEsempio() {
       .map(([apparecchio, nuovo, n]) => ({ giorno: isoGiorno(giorniFa(i)), apparecchio, dove: 'app', nuovo, quanti: Math.round(n * (0.5 + caso())) }))),
     chiusure: [['ipad', 'a_schermo', 'scrivo: penna', 2], ['ipad', 'in_sottofondo', '', 3], ['android-tablet', 'a_schermo', 'tele NxN', 1]]
       .map(([apparecchio, stato, faceva, quanti]) => ({ giorno: isoGiorno(giorniFa(0)), apparecchio, dove: 'app', stato, faceva, versione: '1.0', quanti, tele_max: 12 })),
-    costiMese: 0,
     catenaGiorni: [2, 1, 0].flatMap((i) => [['flex', 'ok', 40, 0.014, 1100], ['standard', 'ok', 6, 0.004, 700], ['gemma', 'ok', 1, 0.0022, null], ['gemma', 'errore', i === 0 ? 1 : 0, 0, null]]
       .filter((x) => x[2]).map(([gradino, esito, quanti, costo_usd, primo]) => ({ giorno: isoGiorno(giorniFa(i)), gradino, esito, quanti, costo_usd,
         primo_medio_ms: primo, primo_max_ms: primo && primo * 3, durata_media_ms: 7000, flex_in_coda: gradino === 'standard' ? 2 : 0 }))),
@@ -261,11 +263,9 @@ async function tutte(domanda) {
 async function datiVeri(sb) {
   const da = isoGiorno(giorniFa(90));
   const conta = { count: 'exact' };
-  const inizioMese = isoGiorno(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)));
   const risposte = await Promise.all([
     tutte(() => sb.from('metriche_app').select('giorno,store,metrica,dimensione,valore', conta).gte('giorno', da)
       .order('giorno').order('store').order('metrica').order('dimensione')),
-    sb.from('costi').select('importo').gte('giorno', inizioMese),
     tutte(() => sb.from('metriche_account').select('giorno,piattaforma,valore', conta).eq('metrica', 'follower').gte('giorno', da)
       .order('giorno').order('piattaforma')),
     tutte(() => sb.from('pubblicazioni').select('id,piattaforma,url,pubblicata_alle,didascalia,video(titolo)', conta)
@@ -283,7 +283,7 @@ async function datiVeri(sb) {
     sb.from('strategie').select('*').order('alle', { ascending: false }).limit(15),
     sb.from('esperimenti').select('*').order('creato_alle', { ascending: false }).limit(100),
     sb.from('lezioni').select('*').order('alle', { ascending: false }).limit(50),
-    sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(60),
+    sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(300),
     sb.from('video').select('titolo,stato,anteprima,creato_alle,note,pubblicazioni(id,piattaforma,stato,url,programmata_per,pubblicata_alle)')
       .order('creato_alle', { ascending: false }).limit(60),
     sb.from('metriche_account').select('giorno,metrica,valore').eq('piattaforma', 'instagram')
@@ -307,10 +307,12 @@ async function datiVeri(sb) {
     // Matteo, 24/11: la catena dell'AI gratuita (flex → standard → Gemma), per giorno e le ultime richieste.
     sb.from('catena_ai_giorni').select('*').gte('giorno', isoGiorno(giorniFa(14))).order('giorno'),
     sb.from('catena_ai_richieste').select('*').order('quando', { ascending: false }).limit(30),
+    // Matteo, 25/11: i download totali dell'app, da sempre (una riga per giorno e store, senza dimensione).
+    tutte(() => sb.from('metriche_app').select('giorno,store,valore', conta).eq('metrica', 'download').eq('dimensione', '').order('giorno').order('store')),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito, catenaGiorni, catenaRichieste] = risposte.map((r) => r.data);
+  const [metriche, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito, catenaGiorni, catenaRichieste, downloadTutti] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -346,7 +348,7 @@ async function datiVeri(sb) {
         .filter((f) => f.download > 0).sort((a, b) => b.download - a.download),
       paesi: [...paesi].map(([codice, download]) => ({ paese: nomePaese(codice), download })).sort((a, b) => b.download - a.download),
       imbuto },
-    costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
+    downloadTotali: { quanti: downloadTutti.reduce((s, x) => s + Number(x.valore), 0), dal: downloadTutti[0]?.giorno },
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
     domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito, catenaGiorni, catenaRichieste,
     // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
@@ -500,6 +502,30 @@ function schedaGrafico(id, titolo, sotto, extra = '', spiega = '') {
     + `<div id="g-${id}" class="grafico" role="img" aria-label="${esc(titolo)}"></div><div id="t-${id}" hidden></div></section>`;
 }
 
+// Matteo, 25/11: «da telefono più cliccabile». Ogni cosa è una scheda corta (titolo, una riga, un numero a destra);
+// si tocca e si apre il dettaglio. Quelle aperte restano aperte quando la pagina si rilegge o si torna indietro.
+const aperte = new Set();
+function apri(id, titolo, riga, valore, dentro, classe = '') {
+  return `<details class="apri${classe ? ` ${classe}` : ''}" data-apri="${esc(id)}"${aperte.has(id) ? ' open' : ''}><summary>`
+    + `<span class="apri-testa"><span class="apri-titolo">${titolo}</span>${riga ? `<span class="apri-riga">${riga}</span>` : ''}</span>`
+    + `${valore != null && valore !== '' ? `<span class="apri-valore">${valore}</span>` : ''}</summary><div class="apri-dentro">${dentro}</div></details>`;
+}
+// Un grafico dentro una scheda corta: il grafico si disegna subito e si rimisura quando la scheda si apre.
+function graficoCorto(id, titolo, riga, valore, sotto = '', extra = '', spiega = '') {
+  const dentro = `<div class="apri-barra"><p class="sotto">${esc(sotto)}</p><button class="bottone-tabella" data-tabella="${id}" aria-pressed="false">Tabella</button></div>`
+    + `${spiega ? `<details class="spiega"><summary>Come si legge</summary><p>${esc(spiega)}</p></details>` : ''}${extra}`
+    + `<div id="g-${id}" class="grafico" role="img" aria-label="${esc(titolo)}"></div><div id="t-${id}" hidden></div>`;
+  return apri(`grafico-${id}`, esc(titolo), esc(riga), valore, dentro);
+}
+document.addEventListener('toggle', (e) => {
+  const x = e.target;
+  if (!x.dataset?.apri) return;
+  if (x.open) aperte.add(x.dataset.apri); else aperte.delete(x.dataset.apri);
+  if (x.open) x.querySelectorAll('.grafico').forEach((el) => echarts.getInstanceByDom(el)?.resize());
+}, true);
+const titoloSezione = (testo, nota = '') => `<h2 class="titolo-sezione">${esc(testo)}${nota ? ` <span class="quando">${esc(nota)}</span>` : ''}</h2>`;
+const tessera = (etichetta, valore, delta = '') => `<section class="scheda tessera"><div class="etichetta">${etichetta}</div><div class="valore">${valore}</div>${delta ? `<div class="delta">${delta}</div>` : ''}</section>`;
+
 function statoAvviso(livello) {
   const nome = { info: 'Info', attenzione: 'Attenzione', grave: 'Grave' }[livello] || livello;
   return `<span class="stato ${livello === 'info' ? 'bene' : esc(livello)}">${esc(nome)}</span>`;
@@ -568,17 +594,18 @@ function bloccoUscite(d) {
 // Chi decide: il Direttore se il suo interruttore è acceso, altrimenti tornano Stratega, Analista e Ricercatore.
 const direttoreAcceso = (d) => d.interruttori.find((i) => i.nome === 'direttore')?.attivo === true;
 
+// Le righe che ripetono il resoconto («Giro del Direttore …: che cosa ha deciso») stanno già in Resoconti.
+const doppione = (x) => /^Giro del (Direttore|lo Stratega|Stratega)/i.test(x.decisione || '');
 function bloccoDirettore(d) {
   const acceso = direttoreAcceso(d);
   const ultimo = d.strategie[0];
-  const sue = d.decisioni.filter((x) => ['direttore', 'stratega'].includes(String(x.agente).toLowerCase())).slice(0, 3);
+  const sue = d.decisioni.filter((x) => ['direttore', 'stratega'].includes(String(x.agente).toLowerCase()) && !doppione(x)).slice(0, 3);
   const stato = `<span class="stato ${acceso ? 'bene' : 'attenzione'}">${acceso ? 'Acceso' : 'Spento'}</span>`;
   const giro = ultimo
-    ? `<p class="sotto">${stato} · ultimo giro ${fa(ultimo.alle)}</p><div>${mdRiga(ultimo.riassunto || 'Giro senza riassunto.')}</div>
-       <details class="resoconto"><summary>Leggi il resoconto intero</summary>${markdown(ultimo.testo || '')}</details>`
+    ? `<p class="sotto">${stato} · ultimo giro ${fa(ultimo.alle)}</p><div>${mdRiga(ultimo.riassunto || 'Giro senza riassunto.')}</div>`
     : `<p class="sotto">${stato}</p><p class="vuoto">Ancora nessun giro.</p>`;
   const decisioni = sue.length ? `<ul class="elenco" style="margin-top:6px;border-top:1px solid var(--griglia)">${sue.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span></li>`).join('')}</ul>` : '';
-  return `<section class="blocco"><div class="blocco-testa"><h2>Il Direttore</h2><a href="#direttore/resoconti">Tutti i resoconti</a></div>
+  return `<section class="blocco"><div class="blocco-testa"><h2>Il Direttore</h2><a href="#direttore/resoconti">Il resoconto</a></div>
     <div class="scheda">${giro}${acceso ? '' : '<p class="sotto" style="margin:8px 0 0">Da spento decidono Stratega, Analista e Ricercatore.</p>'}${decisioni}</div></section>`;
 }
 
@@ -637,6 +664,7 @@ function bloccoNumeri(d) {
           <div class="etichetta">Download${ultimo ? ` del ${giorno(ultimo.giorno)}` : ''}</div>
           <div class="valore">${ultimo ? fmtIntero.format(ultimo.download) : '–'}</div>
           <div class="delta ${delta > 0 ? 'su' : ''}">${delta == null ? 'Servono almeno 8 giorni di dati' : `${delta > 0 ? '+' : ''}${delta}% sulla media dei 7 giorni prima`}</div>
+          <div class="delta">Totali: <strong>${fmtIntero.format(d.downloadTotali?.quanti ?? giorni.reduce((s, g) => s + g.download, 0))}</strong></div>
         </div>${scintilla(giorni.slice(-14).map((g) => g.download))}
         <p class="quando" style="grid-column:1 / -1;margin:0">Apple dà i download dopo circa 2 giorni: questo è l'ultimo giorno che esiste.</p></div>
       <div class="scheda"><div class="etichetta">Visualizzazioni dei video usciti negli ultimi 7 giorni</div><div class="valore">${numero(vis7)}</div>
@@ -735,17 +763,12 @@ function stimaSocial(d) {
 }
 
 function schedaStima(st) {
-  const testa = '<section class="scheda eroe" style="grid-column: 1 / -1"><div class="etichetta">Download portati dai social, stima';
-  if (!st) return `${testa}</div><p class="vuoto">Servono almeno 14 giorni di download prima del primo video.</p></section>`;
   const ogniMille = st.extra > 0 && st.vis
-    ? ` Circa ${(st.extra / st.vis * 1000).toFixed(1).replace('.', ',')} download ogni 1.000 visualizzazioni (${fmtIntero.format(st.vis)} quelle dei video usciti in quei giorni).` : '';
-  const chiaro = st.extra > st.margine ? 'più di quanto variano da soli' : 'dentro quanto variano da soli, quindi per ora non si distingue dal caso';
-  return `${testa} (dal ${giorno(st.inizio)} al ${giorno(st.fine)})</div>
-      <div class="valore">${st.extra > 0 ? '+' : ''}${fmtIntero.format(st.extra)}</div>
-      <div class="delta">${fmtIntero.format(st.fatti)} fatti, ${fmtIntero.format(Math.round(st.attesi))} attesi senza i social (±${st.margine})</div>
-      <details class="spiega"><summary>Come si legge</summary><p>Attesi: la media dei 28 giorni prima dei video (${st.media.toFixed(1).replace('.', ',')} al giorno).
-        Margine ±${st.margine}: ${chiaro}.${ogniMille} Dai social non arrivano link: chi vede un video cerca NoteGuide sull'App Store, e Apple lo conta come ricerca. Per questo è una stima e non un conteggio.</p></details>
-    </section>`;
+    ? ` Circa ${(st.extra / st.vis * 1000).toFixed(1).replace('.', ',')} download ogni 1.000 visualizzazioni.` : '';
+  const chiaro = st.extra > st.margine ? 'più di quanto variano da soli' : 'dentro quanto variano da soli: per ora non si distingue dal caso';
+  return `<p class="delta">Dal ${giorno(st.inizio)} al ${giorno(st.fine)}: ${fmtIntero.format(st.fatti)} download, ${fmtIntero.format(Math.round(st.attesi))} attesi senza i social (±${st.margine}), ${chiaro}.${ogniMille}</p>
+    <details class="spiega"><summary>Come si legge</summary><p>Attesi: la media dei 28 giorni prima dei video (${st.media.toFixed(1).replace('.', ',')} al giorno).
+      Dai social non arrivano link: chi vede un video cerca NoteGuide sull'App Store, e Apple lo conta come ricerca. Per questo è una stima.</p></details>`;
 }
 
 // Il credito OpenRouter (Ettore, 23/11/2026): la stessa chiave per l'AI gratuita del quaderno e per il banco dello
@@ -765,29 +788,59 @@ function schedaCredito(righe) {
         Oggi: quaderno ${piccoli(quaderno)}, banco ${piccoli(banco)}</div></section>`;
 }
 
+// Numeri → App (Matteo, 25/11): in cima i numeri fondamentali, poi i grafici come schede corte da aprire, divisi in
+// Download, Uso dell'app e Soldi. Il credito OpenRouter è passato in AI → Gratuita, i costi del mese sono tolti (la
+// tabella è vuota). Tutto quello che ha chiesto Ettore resta: aperture, «Come hai conosciuto», chiusure, tasti.
 function paginaApp(d) {
-  const ultimo = d.app.giorni.at(-1);
-  const ricavi30 = d.app.giorni.slice(-30).reduce((s, g) => s + g.ricavi, 0);
-  return `<div class="tessere">${schedaStima(stimaSocial(d))}
-      <section class="scheda tessera"><div class="etichetta">Utenti attivi${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}</div><div class="valore">${ultimo ? numero(ultimo.dispositivi) : '–'}</div></section>
-      <section class="scheda tessera"><div class="etichetta">Ricavi netti, 30 giorni</div><div class="valore">${dollari(ricavi30)}</div></section>
-      <section class="scheda tessera"><div class="etichetta">Costi del mese</div><div class="valore">${euro(d.costiMese)}</div></section>
-      ${schedaCredito(d.credito)}
-    </div><div class="griglia">
-    ${schedaGrafico('imbuto', 'Dal video al download', 'Visite al profilo, alla pagina dell\'app e download, per giorno', righeImbuto(ogniMille(d.app.imbuto || [])),
-      'Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download. I numeri di Apple arrivano dopo circa 2 giorni.')}
-    ${schedaGrafico('download', 'Download al giorno', 'Primi download dall\'App Store', '',
-      'Tratteggio: la media prima dei social. Zona grigia: da quando escono i video. Apple dà i numeri dopo circa 2 giorni.')}
-    ${schedaGrafico('attivi', 'Utenti attivi', 'Dispositivi che aprono l\'app, per giorno')}
-    ${schedaGrafico('ricavi', 'Ricavi netti per settimana', 'Crediti venduti, tolta la quota di Apple', '', 'In dollari, come li dà Apple.')}
-    ${schedaGrafico('fonti', 'Da dove arrivano i download', 'Ultimi 90 giorni', '', 'Per campagna se i link nelle bio la indicano, altrimenti per fonte di Apple.')}
-    ${schedaGrafico('paesi', 'Da quali paesi', 'Primi download degli ultimi 90 giorni')}
-    ${schedaGrafico('conosciuto', 'Come hanno conosciuto NoteGuide', `Le risposte alla domanda che l'app fa alla prima apertura${d.conosciuto.length ? `, dal ${giorno(d.conosciuto[0].giorno)}` : ''}. Chi non risponde non conta. Nella tabella, per giorno, con le frasi scritte in «Altro»`)}
-    ${schedaGrafico('aperture', 'Prime aperture dell\'app', `Ogni dispositivo conta una volta, la prima volta che apre NoteGuide${d.aperture.length ? `, dal ${giorno(d.aperture[0].giorno)}` : ' (il contatore parte quando l\'app lo pubblica)'}. Nel grafico i nuovi; nella tabella, per giorno, nuovi / già in uso (chi l\'app ce l\'aveva e la riapre). Chi non la apre non c\'è: quello lo sa solo Apple`)}
-    ${schedaGrafico('chiusure', "Chiusure improvvise dell'app", `L'app che muore da sola, contata quando si riapre${d.chiusure.length ? `, dal ${giorno(d.chiusure[0].giorno)}` : ' (dal 23/11: ancora nessuna)'}. Nel grafico, per giorno, quelle a schermo: la persona la stava usando`, '',
-      "A schermo: è morta mentre la si usava, sono quelle che contano. In sottofondo: di solito l'ha chiusa il sistema o chi la usava. Non si sa: le scatole nere di prima del 23/11. Play non le segna, perché la pagina che muore dentro Chrome non conta come crash. Quando quelle a schermo crescono arriva un avviso.")}
-    ${schedaGrafico('tasti', 'I tasti dell\'app, dal più usato', `Quante volte si sceglie una voce dalla tendina di Verifica, Suggerimento e Domanda${d.tasti.length ? `, dal ${giorno(d.tasti[0].giorno)}` : ''}. Solo il numero, non chi li preme; il tutorial non conta`)}
-  </div>`;
+  const g = d.app.giorni;
+  const ultimo = g.at(-1);
+  const tot = d.downloadTotali?.quanti ?? g.reduce((s, x) => s + x.download, 0);
+  const dal = d.downloadTotali?.dal || g[0]?.giorno;
+  const ricavi30 = g.slice(-30).reduce((s, x) => s + x.ricavi, 0);
+  const settimana = g.slice(-7).reduce((s, x) => s + x.download, 0);
+  const prima = g.slice(-14, -7).reduce((s, x) => s + x.download, 0);
+  const nuoviAperture = d.aperture.filter((x) => x.nuovo).reduce((s, x) => s + x.quanti, 0);
+  const st = stimaSocial(d);
+  const totConosciuto = d.conosciuto.reduce((s, x) => s + x.quanti, 0);
+  const daIg = d.conosciuto.filter((x) => x.voce === 'instagram').reduce((s, x) => s + x.quanti, 0);
+  const aSchermo = d.chiusure.filter((x) => x.stato === 'a_schermo' && x.giorno >= isoGiorno(giorniFa(7))).reduce((s, x) => s + x.quanti, 0);
+  const tasti = d.tasti.reduce((s, x) => s + x.quanti, 0);
+  const paese = d.app.paesi[0];
+  const imb = (d.app.imbuto || []).filter((x) => x.igVisite != null).at(-1);
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '–');
+  return `<div class="tessere">
+      <section class="scheda tessera eroe" style="grid-column: 1 / -1"><div class="etichetta">Download totali dell'app</div>
+        <div class="valore">${fmtIntero.format(tot)}</div>
+        <div class="delta">App Store${dal ? ` dal ${giorno(dal)}` : ''}${ultimo ? `, fino al ${giorno(ultimo.giorno)}` : ''} (Apple li dà dopo circa 2 giorni).
+          Ultimi 7 giorni ${fmtIntero.format(settimana)}${prima ? `, ${settimana >= prima ? '+' : ''}${pct(settimana - prima, prima)} sui 7 prima` : ''}.</div></section>
+      ${tessera(`Download${ultimo ? ` del ${giorno(ultimo.giorno)}` : ''}`, ultimo ? fmtIntero.format(ultimo.download) : '–')}
+      ${tessera('Portati dai social, stima', st ? `${st.extra > 0 ? '+' : ''}${fmtIntero.format(st.extra)}` : '–', st ? `dal ${giorno(st.inizio)}, ±${st.margine}` : 'servono 14 giorni')}
+      ${tessera(`Utenti attivi${ultimo ? ` (${giorno(ultimo.giorno)})` : ''}`, ultimo ? numero(ultimo.dispositivi) : '–')}
+      ${tessera('Ricavi netti, 30 giorni', dollari(ricavi30))}
+    </div>
+    ${titoloSezione('Download')}
+    <div class="schede-corte">
+    ${graficoCorto('download', 'Download al giorno', 'Primi download dall\'App Store', ultimo ? fmtIntero.format(ultimo.download) : '–', 'Apple dà i numeri dopo circa 2 giorni', '',
+      'Tratteggio: la media prima dei social. Zona grigia: da quando escono i video.')}
+    ${st ? apri('stima', 'Download portati dai social', `${fmtIntero.format(st.fatti)} fatti, ${fmtIntero.format(Math.round(st.attesi))} attesi senza i social`, `${st.extra > 0 ? '+' : ''}${fmtIntero.format(st.extra)}`, schedaStima(st)) : ''}
+    ${graficoCorto('imbuto', 'Dal video al download', 'Visite al profilo, pagina dell\'app, download', imb ? `${numero(imb.igVisite)} visite` : '–', 'Per giorno, ultimi 30', righeImbuto(ogniMille(d.app.imbuto || [])),
+      'Instagram: visite al profilo (i reel da soli non le danno). App Store: visite alla pagina arrivate da un link esterno, e download.')}
+    ${graficoCorto('conosciuto', 'Come hanno conosciuto NoteGuide', `Instagram ${pct(daIg, totConosciuto)} delle risposte`, numero(totConosciuto), `La domanda alla prima apertura${d.conosciuto.length ? `, dal ${giorno(d.conosciuto[0].giorno)}` : ''}. Nella tabella, per giorno, con le frasi scritte in «Altro»`)}
+    ${graficoCorto('aperture', 'Prime aperture dell\'app', 'Tutti i dispositivi, anche Android e computer', numero(nuoviAperture), `Ogni dispositivo conta una volta${d.aperture.length ? `, dal ${giorno(d.aperture[0].giorno)}` : ''}. Nella tabella: nuovi / già in uso`)}
+    ${graficoCorto('paesi', 'Da quali paesi', paese ? `Primo: ${paese.paese}` : 'Ultimi 90 giorni', paese ? pct(paese.download, d.app.paesi.reduce((s, x) => s + x.download, 0)) : '–', 'Primi download degli ultimi 90 giorni')}
+    ${graficoCorto('fonti', 'Da dove li trova Apple', 'Ricerca, navigazione, link', '', 'Ultimi 90 giorni', '', 'Per campagna se i link nelle bio la indicano, altrimenti per fonte di Apple. Dai social non arrivano link: chi vede un video cerca NoteGuide, e Apple lo conta come ricerca.')}
+    </div>
+    ${titoloSezione("Uso dell'app")}
+    <div class="schede-corte">
+    ${graficoCorto('attivi', 'Utenti attivi', 'Dispositivi che aprono l\'app, per giorno', ultimo ? numero(ultimo.dispositivi) : '–')}
+    ${graficoCorto('tasti', 'I tasti dell\'app', 'Verifica, Suggerimento, Domanda', numero(tasti), `Le volte che si sceglie una voce${d.tasti.length ? `, dal ${giorno(d.tasti[0].giorno)}` : ''}. Il tutorial non conta`)}
+    ${graficoCorto('chiusure', 'Chiusure improvvise', 'A schermo, ultimi 7 giorni', numero(aSchermo), 'Per giorno, quelle a schermo: la persona la stava usando', '',
+      "A schermo: è morta mentre la si usava, sono quelle che contano. In sottofondo: di solito l'ha chiusa il sistema. Non si sa: le scatole nere di prima del 23/11. Quando quelle a schermo crescono arriva un avviso.")}
+    </div>
+    ${titoloSezione('Soldi')}
+    <div class="schede-corte">
+    ${graficoCorto('ricavi', 'Ricavi netti per settimana', 'Crediti venduti, tolta la quota di Apple', dollari(ricavi30), 'Solo settimane intere, in dollari come li dà Apple')}
+    </div>`;
 }
 
 function disegnaApp(d) {
@@ -887,10 +940,18 @@ function disegnaRisultati(d) {
 // I numeri degli account: follower e visualizzazioni per giorno di uscita.
 function paginaSocial(d) {
   const voci = Object.entries(PIATTAFORME).map(([p, nome]) => [nome, css(p)]);
-  return `<div class="griglia">
-    ${schedaGrafico('follower', 'Follower', 'Per piattaforma', legenda(voci))}
-    ${schedaGrafico('visual', 'Visualizzazioni dei video', 'Per giorno di uscita, tutti i social, ultimi numeri letti', legenda(voci))}
-  </div>`;
+  const tessere = Object.entries(PIATTAFORME).filter(([p]) => d.follower[p]?.length).map(([p, nome]) => {
+    const punti = d.follower[p];
+    const cresce = punti.length > 7 ? punti.at(-1)[1] - punti.at(-8)[1] : null;
+    return tessera(`<span class="punto" style="background:${css(p)}"></span>Follower ${esc(nome)}`, fmtIntero.format(punti.at(-1)[1]),
+      cresce == null ? '' : `${cresce >= 0 ? '+' : ''}${fmtIntero.format(cresce)} in 7 giorni`);
+  }).join('');
+  const vis7 = d.post.filter((x) => x.data >= isoGiorno(giorniFa(7))).reduce((s, x) => s + x.vis, 0);
+  return `<div class="tessere">${tessere}${tessera('Visualizzazioni, video degli ultimi 7 giorni', numero(vis7))}</div>
+    <div class="schede-corte">
+    ${graficoCorto('follower', 'Follower', 'Per piattaforma', '', 'Ultimi 90 giorni', legenda(voci))}
+    ${graficoCorto('visual', 'Visualizzazioni dei video', 'Per giorno di uscita', numero(vis7), 'Tutti i social, ultimi numeri letti', legenda(voci))}
+    </div>`;
 }
 
 function disegnaSocial(d) {
@@ -1064,20 +1125,23 @@ function resocontoCorto(testo, apri = 'Leggi tutto') {
 // Solo il segno dell'elenco o del titolo: un «**» all'inizio resta, se no il grassetto si apre e non si chiude.
 const primaRiga = (testo) => String(testo || '').split(/\r?\n/).map((t) => t.replace(/^\s*(?:[>#]+|[-*]|\d+\.)\s+/, '').trim()).find(Boolean) || '';
 
-function elencoDecisioni(decisioni) {
-  if (!decisioni.length) return '<p class="vuoto">Ancora nessuna decisione.</p>';
-  return `<ul class="elenco">${decisioni.map((x) => `<li><b>${esc(nomeAgente(x.agente))}</b> <span class="quando">${fa(x.alle)}</span>`
-    + `<div>${esc(x.decisione)}</div><div class="motivo">${mdRiga(primaRiga(x.motivo))}</div>`
-    + (String(x.motivo).trim().includes('\n') || x.dati?.resoconto
-      ? `<details class="resoconto"><summary>Perché, per intero</summary>${markdown(x.motivo)}${x.dati?.resoconto ? markdown(x.dati.resoconto) : ''}</details>` : '')
-    + '</li>').join('')}</ul>`;
+// «Azioni del Direttore»: il motivo è una riga sola, ma in `dati.azioni` ci sono le azioni una per una.
+function schedaDecisione(x, i) {
+  const lista = Array.isArray(x.dati?.azioni) && x.dati.azioni.length ? x.dati.azioni : null;
+  const riga = lista ? `${lista.length} ${lista.length === 1 ? 'azione' : 'azioni'}` : primaRiga(x.motivo);
+  const dentro = lista ? `<ul class="elenco">${lista.map((a) => `<li>${mdRiga(a)}</li>`).join('')}</ul>`
+    : `<div class="resoconto">${markdown(x.motivo || '')}${x.dati?.resoconto ? markdown(x.dati.resoconto) : ''}</div>`;
+  return apri(`decisione-${x.alle}-${i}`, `${esc(x.decisione)}`, `<b>${esc(nomeAgente(x.agente))}</b> · ${fa(x.alle)}${lista ? '' : ` · ${mdRiga(riga.slice(0, 110))}${riga.length > 110 ? '…' : ''}`}`,
+    lista ? riga : '', dentro);
 }
 
 function paginaDecisioni(d) {
   // Il Capo controlla la fila ogni mezz'ora: le sue righe stanno chiuse in fondo, se no coprono tutto il resto.
-  const capo = (d.capo || []).length ? `<section class="scheda"><details class="resoconto"><summary>Il Capo: ultimi ${d.capo.length} controlli automatici</summary>
-      <ul class="elenco">${d.capo.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span></li>`).join('')}</ul></details></section>` : '';
-  return `<div class="griglia"><section class="scheda"><h2>Decisioni degli agenti</h2><p class="sotto">Le scelte prese da soli. Lo Scout AI è in Altro → Modelli AI</p>${elencoDecisioni(d.decisioni)}</section>${capo}</div>`;
+  const capo = (d.capo || []).length ? apri('capo', 'Il Capo: controlli automatici', `Ultimi ${d.capo.length}, uno ogni mezz'ora`, '',
+    `<ul class="elenco">${d.capo.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span></li>`).join('')}</ul>`) : '';
+  const decisioni = d.decisioni.filter((x) => !doppione(x));
+  return `<p class="intro-coda">Le scelte prese dagli agenti, le più nuove in cima. Tocca per il perché. I giri del Direttore sono in Resoconti, lo Scout in AI.</p>
+    <div class="schede-corte">${decisioni.length ? decisioni.map(schedaDecisione).join('') : '<p class="vuoto">Ancora nessuna decisione.</p>'}${capo}</div>`;
 }
 
 // Lo Scout AI (Ettore, 16/11; due giri dal 25/11, Matteo): l'AI gratuita ogni 3 giorni, con il banco; le fasce a
@@ -1106,12 +1170,12 @@ function schedaGiroScout(giri, modo) {
   const g = GIRI_SCOUT[modo];
   const [ultimo, ...prima] = giri;
   const prossimo = `<p class="sotto" style="margin:8px 0 0">Prossimo giro: ${prossimoGiro(g.ogni, ultimo)}, sul PC con la cartella dell'app.</p>`;
-  if (!ultimo) return `<section class="scheda"><h2>Scout AI: ${g.nome}</h2><p class="sotto">${g.cosa}</p><p class="vuoto">Non ha ancora fatto il primo giro.</p>${prossimo}</section>`;
+  if (!ultimo) return apri(`scout-${modo}`, `Scout AI: ${g.nome}`, 'Non ha ancora fatto il primo giro', '', `<p class="sotto">${g.cosa}</p>${prossimo}`);
   const proposte = ultimo.dati?.proposte || [];
   const soglie = ultimo.dati?.soglie || [];
   const n = proposte.length + soglie.length;
   const novita = n ? `<span class="stato attenzione">${n === 1 ? 'Una proposta' : `${n} proposte`}</span>` : '<span class="stato bene">Nessuna novità</span>';
-  return `<section class="scheda"><h2>Scout AI: ${g.nome} ${novita}</h2><p class="sotto">Ultimo giro ${fa(ultimo.alle)}. ${g.cosa}</p>
+  return apri(`scout-${modo}`, `Scout AI: ${g.nome}`, `Ultimo giro ${fa(ultimo.alle)}`, novita, `<p class="sotto">${g.cosa}</p>
       ${n ? `<ul class="elenco">${proposte.map(schedaProposta).join('')}${soglie.map(schedaSoglia).join('')}</ul>
       <p class="sotto" style="margin:8px 0 0">Se una proposta vi convince, ditelo alla chat dell'app: lo Scout non tocca mai l'app.</p>` : ''}
       ${ultimo.dati?.resoconto ? resocontoCorto(ultimo.dati.resoconto, 'Leggi il resoconto') : `<p>${mdRiga(ultimo.motivo)}</p>`}
@@ -1119,7 +1183,7 @@ function schedaGiroScout(giri, modo) {
       ${prima.length ? `<details class="resoconto"><summary>Giri prima (${prima.length})</summary><ul class="elenco">${prima.map((x) => `<li>${esc(x.decisione)} <span class="quando">${fa(x.alle)}</span>`
         + [...(x.dati?.proposte || []), ...(x.dati?.soglie || [])].map((p) => `<div class="motivo">${mdRiga(p.titolo)}</div>`).join('')
         + (x.dati?.resoconto ? `<details class="resoconto"><summary>Leggi</summary>${markdown(x.dati.resoconto)}</details>` : '') + '</li>').join('')}</ul></details>` : ''}
-      ${prossimo}</section>`;
+      ${prossimo}`);
 }
 function schedaProposta(p) {
   const tasto = p.tasto && p.tasto !== 'tutti' ? ` · ${esc(p.tasto[0].toUpperCase() + p.tasto.slice(1))}` : '';
@@ -1137,9 +1201,8 @@ const ESITI_PASSO = { ok: 'ok', coda: 'in coda', fermo: 'fermo a metà', vuoto: 
 function schedaCatena(d) {
   const giorni = d.catenaGiorni || [];
   const ultime = d.catenaRichieste || [];
-  const titolo = '<h2>AI gratuita: chi risponde</h2>';
   if (!giorni.length && !ultime.length) {
-    return `<section class="scheda">${titolo}<p class="vuoto">Ancora nessun dato: arrivano quando il server con la catena flex → standard → Gemma è pubblicato.</p></section>`;
+    return { tessere: '', dettagli: '<p class="vuoto">Catena: ancora nessun dato. Arrivano quando il server con flex → standard → Gemma è pubblicato.</p>' };
   }
   const oggi = giorni.at(-1)?.giorno;
   const diOggi = giorni.filter((g) => g.giorno === oggi);
@@ -1149,14 +1212,13 @@ function schedaCatena(d) {
   const costo = diOggi.reduce((s, g) => s + Number(g.costo_usd), 0);
   const primo = (gr) => { const g = diOggi.find((x) => x.gradino === gr && x.esito === 'ok' && x.primo_medio_ms != null); return g ? `${(g.primo_medio_ms / 1000).toFixed(1).replace('.', ',')} s` : '–'; };
   const errori = conta(diOggi, (g) => g.esito !== 'ok');
-  const tessere = `<div class="tessere">
+  const tessere = `
       <section class="scheda tessera"><div class="etichetta">Richieste ${giorno(oggi)}</div><div class="valore">${numero(tot)}</div>
         <div class="delta">Flex ${quota(conta(diOggi, (g) => g.gradino === 'flex' && g.esito === 'ok'))}, standard ${quota(conta(diOggi, (g) => g.gradino === 'standard' && g.esito === 'ok'))}, Gemma ${quota(conta(diOggi, (g) => g.gradino === 'gemma' && g.esito === 'ok'))}${errori ? `, <strong>errori ${errori}</strong>` : ''}</div></section>
       <section class="scheda tessera"><div class="etichetta">Spesa ${giorno(oggi)}</div><div class="valore">${fmtDollariPiccoli.format(costo)}</div>
         <div class="delta">Tetto 2 $ al giorno: oltre risponde solo Gemma</div></section>
       <section class="scheda tessera"><div class="etichetta">Primo pezzo, in media</div><div class="valore">${primo('flex')}</div>
-        <div class="delta">Flex; standard ${primo('standard')}. Oltre 10 s flex è «in coda»: oggi ${numero(diOggi.reduce((s, g) => s + (g.flex_in_coda || 0), 0))} volte</div></section>
-    </div>`;
+        <div class="delta">Flex; standard ${primo('standard')}. «In coda» oggi: ${numero(diOggi.reduce((s, g) => s + (g.flex_in_coda || 0), 0))}</div></section>`;
   const perGiorno = [...new Set(giorni.map((g) => g.giorno))].sort().reverse().map((gg) => {
     const r = giorni.filter((g) => g.giorno === gg);
     return [giorno(gg), numero(conta(r, (g) => g.gradino === 'flex' && g.esito === 'ok')), numero(conta(r, (g) => g.gradino === 'standard' && g.esito === 'ok')),
@@ -1166,26 +1228,29 @@ function schedaCatena(d) {
   const passi = (x) => (x.passi || []).map((p) => `${esc(GRADINI[p.g] || p.g)}: ${esc(ESITI_PASSO[p.esito] || p.esito)}`).join(' → ');
   const centesimi = (usd) => (Number(usd) * 100).toFixed(3).replace('.', ',');
   const secondi = (ms) => (ms == null ? '–' : `${(ms / 1000).toFixed(1).replace('.', ',')} s`);
-  return `<section class="scheda">${titolo}<p class="sotto">Ogni richiesta gratuita prova Particle flex (costa metà), poi standard, poi Gemma. Si aggiorna ogni mezz'ora</p>
-      ${tessere}
-      <details class="resoconto"><summary>Per giorno (ultimi 14)</summary><div style="overflow-x:auto">${tabella([['Giorno'], ['Flex', 1], ['Std', 1], ['Gemma', 1], ['Err.', 1], ['Spesa', 1]], perGiorno)}</div></details>
-      <details class="resoconto"><summary>Ultime richieste (${ultime.length})</summary><div style="overflow-x:auto">${tabella([['Passi'], ['Primo', 1], ['Durata', 1], ['Cent.', 1]],
+  return { tessere, dettagli: `
+      ${apri('catena-giorni', 'Chi risponde, per giorno', 'Flex, standard, Gemma, errori e spesa degli ultimi 14 giorni', '', `<p class="sotto">Ogni richiesta gratuita prova Particle flex (costa metà), poi standard, poi Gemma. Si aggiorna ogni mezz'ora.</p><div style="overflow-x:auto">${tabella([['Giorno'], ['Flex', 1], ['Std', 1], ['Gemma', 1], ['Err.', 1], ['Spesa', 1]], perGiorno)}</div>`)}
+      ${apri('catena-ultime', 'Ultime richieste', 'I passi di ognuna, i tempi e il costo', String(ultime.length), `<div style="overflow-x:auto">${tabella([['Passi'], ['Primo', 1], ['Durata', 1], ['Cent.', 1]],
         ultime.map((x) => [`${passi(x) || esc(GRADINI[x.gradino] || x.gradino)}<div class="quando">${fa(x.quando)}</div>`, secondi(x.primo_ms), secondi(x.durata_ms), centesimi(x.costo_usd)]))}</div>
-      <p class="sotto" style="margin:8px 0 0">Costo in centesimi di dollaro: una verifica su flex ne costa circa 0,035, su standard 0,064.</p></details>
-    </section>`;
+      <p class="sotto" style="margin:8px 0 0">Costo in centesimi di dollaro: una verifica su flex ne costa circa 0,035, su standard 0,064.</p>`)}` };
 }
 
-function paginaModelli(d) {
+// AI (Matteo, 25/11: fra le sezioni principali). Gratuita: il credito, chi risponde nella catena e lo Scout dei
+// modelli gratuiti. A pagamento: lo Scout delle fasce e i modelli nell'app oggi.
+const giriScout = (d, modo) => (d.scout || []).filter((g) => (g.dati?.modo || 'gratuita') === modo);
+function paginaGratuita(d) {
+  const catena = schedaCatena(d);
+  return `<div class="tessere">${schedaCredito(d.credito)}${catena.tessere}</div>
+    <div class="schede-corte">${schedaGiroScout(giriScout(d, 'gratuita'), 'gratuita')}${catena.dettagli}</div>`;
+}
+function paginaPagamento(d) {
   const giri = d.scout || [];
-  const del_ = (modo) => giri.filter((g) => (g.dati?.modo || 'gratuita') === modo);
-  const app = giri.find((g) => g.dati?.app)?.dati.app;
-  const inUso = app ? `<section class="scheda"><h2>Nell'app oggi</h2><p class="sotto">Letto dai file dell'app ${fa(giri.find((g) => g.dati?.app).alle)}</p>
+  const conApp = giri.find((g) => g.dati?.app);
+  const app = conApp?.dati.app;
+  const inUso = app ? `<section class="scheda"><h2>Nell'app oggi</h2><p class="sotto">Letto dai file dell'app ${fa(conApp.alle)}</p>
       ${tabella([['Fascia'], ['Modello']], (app.a_pagamento || []).map((m) => [esc(m.nome || m.id) + (m.id === app.predefinito ? ' <span class="quando">(di base)</span>' : ''), `<code>${esc(m.id)}</code>`]))}</section>`
     : '';
-  return `<h2 class="titolo-sezione">AI gratuita</h2>
-    <div class="griglia">${schedaCatena(d)}${schedaGiroScout(del_('gratuita'), 'gratuita')}</div>
-    <h2 class="titolo-sezione">A pagamento</h2>
-    <div class="griglia">${schedaGiroScout(del_('pagamento'), 'pagamento')}${inUso}</div>`;
+  return `<div class="schede-corte">${schedaGiroScout(giriScout(d, 'pagamento'), 'pagamento')}</div><div class="griglia" style="margin-top:12px">${inUso}</div>`;
 }
 
 function paginaSistema(d) {
@@ -1222,44 +1287,44 @@ function paginaResoconti(d) {
   if (!d.strategie.length) return `<section class="scheda"><h2>Resoconti</h2><p class="vuoto">${chi} non ha ancora fatto il primo giro.</p></section>`;
   const [ultimo, ...prima] = d.strategie;
   const svolta = (s) => (s.svolta ? ' <span class="stato attenzione">Svolta</span>' : '');
-  const lezioni = d.lezioni.map((l) => `<li>${mdRiga(l.testo)} <span class="quando">${fa(l.alle)}${l.sicurezza ? `, sicurezza ${esc(l.sicurezza)}` : ''}</span>`
-    + `${l.contesto || l.numeri ? `<div class="motivo">${esc([l.contesto, l.numeri].filter(Boolean).join(' · '))}</div>` : ''}</li>`).join('');
-  const domande = (d.domande || []).map((q) => `<li><b>Per ${esc(q.per === 'tutti' ? 'tutti e due' : q.per)}</b> <span class="quando">${fa(q.alle)}</span>`
-    + `<div>${mdRiga(q.testo)}</div>${q.perche ? `<div class="motivo">${mdRiga(q.perche)}</div>` : ''}</li>`).join('');
+  const domande = (d.domande || []).length;
   const quaderno = (d.quaderno || [])[0];
-  return `<div class="griglia">
-    <section class="scheda"><h2>Ultimo giro${svolta(ultimo)}</h2><p class="sotto">${chi}, ${fa(ultimo.alle)}${ultimo.pc ? `, dal ${esc(ultimo.pc)}` : ''}</p>
+  const quando = (s) => new Date(s.alle).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const corto = (s, n = 120) => { const r = String(s || 'Giro senza riassunto.'); return r.length > n ? `${r.slice(0, n).replace(/\s+\S*$/, '')}…` : r; };
+  return `<section class="scheda"><h2>Ultimo giro${svolta(ultimo)}</h2><p class="sotto">${chi}, ${fa(ultimo.alle)}${ultimo.pc ? `, dal ${esc(ultimo.pc)}` : ''}</p>
       ${resocontoCorto(ultimo.testo)}</section>
-    <section class="scheda"><h2>Domande aperte</h2><p class="sotto">Quello che chiede a Ettore e Matteo. Si risponde dalla chat con Claude, non da qui</p>
-      ${domande ? `<ul class="elenco">${domande}</ul>` : '<p class="vuoto">Nessuna: sta decidendo da solo.</p>'}</section>
-    ${quaderno ? `<section class="scheda"><h2>Il suo quaderno</h2><p class="sotto">Gli appunti che si lascia da un giro all'altro, scritti ${fa(quaderno.alle)}</p>
-      <div class="resoconto">${markdown(quaderno.testo || '')}</div></section>` : ''}
-    <section class="scheda"><h2>Giri prima</h2>${prima.length ? `<ul class="elenco">${prima.map((s) => `<li>${mdRiga(s.riassunto || 'Giro senza riassunto.')}${svolta(s)} <span class="quando">${fa(s.alle)}</span>`
-      + `<details class="resoconto"><summary>Leggi</summary>${markdown(s.testo || '')}</details></li>`).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
-    <section class="scheda"><h2>Lezioni</h2><p class="sotto">Le cose imparate: si possono riprovare, dicendo che cosa cambia</p>
-      ${lezioni ? `<ul class="elenco">${lezioni}</ul>` : '<p class="vuoto">Ancora nessuna.</p>'}</section>
-  </div>`;
+    ${domande ? `<p class="intro-coda" style="margin-top:12px"><a href="#oggi">${domande === 1 ? 'Una domanda aperta' : `${domande} domande aperte`} per voi: sono in Oggi</a></p>` : ''}
+    <div class="schede-corte" style="margin-top:12px">
+    ${quaderno ? apri('quaderno', 'Il suo quaderno', `Gli appunti fra un giro e l'altro, ${fa(quaderno.alle)}`, '', `<div class="resoconto">${markdown(quaderno.testo || '')}</div>`) : ''}
+    </div>
+    ${prima.length ? titoloSezione('Giri prima') : ''}
+    <div class="schede-corte">${prima.map((s) => apri(`giro-${s.alle}`, `${esc(quando(s))}${svolta(s)}`, mdRiga(corto(s.riassunto)), '', resocontoCorto(s.testo))).join('')}</div>`;
 }
 
+const primaFrase = (s, n = 110) => { const f = String(s || '').split(/(?<=[.!?])\s/)[0]; return f.length > n ? `${f.slice(0, n).replace(/\s+\S*$/, '')}…` : f; };
 function paginaEsperimenti(d) {
   const voce = (e) => {
     const [nome, classe] = STATI_ESPERIMENTO[e.stato] || [e.stato, ''];
-    return `<li><span class="stato ${classe}">${esc(nome)}</span> <b>${e.id}. ${esc(e.nome)}</b> <span class="quando">${esc(PIATTAFORME[e.piattaforma] || 'Tutti i social')} · ${esc(e.formato)} · ${fa(e.creato_alle)}</span>`
-      + `<div>${mdRiga(e.ipotesi)}</div>`
-      + `<div class="motivo">${esc([e.cosa_cambia ? `Cambia: ${e.cosa_cambia}` : null, e.quota, e.come_si_giudica].filter(Boolean).join(' · '))}</div>`
-      + (e.verdetto ? `<div class="motivo">Verdetto: ${mdRiga(e.verdetto)}${e.sicurezza ? ` (sicurezza ${esc(e.sicurezza)})` : ''}</div>` : '')
-      + (e.fermato_da ? `<div class="motivo">Fermato da ${esc(e.fermato_da)}</div>` : '')
-      + (e.stato === 'in_corso' && sb ? `<button class="bottone-tabella" data-ferma="${e.id}">Ferma</button>` : '')
-      + '</li>';
+    const campo = (titolo, testo) => (testo ? `<p><b>${titolo}.</b> ${mdRiga(testo)}</p>` : '');
+    const dentro = `<div class="resoconto">${campo('Ipotesi', e.ipotesi)}${campo('Cosa cambia', e.cosa_cambia)}${campo('Quanti video', e.quota)}`
+      + `${campo('Come si giudica', e.come_si_giudica)}${campo('Verdetto', e.verdetto ? `${e.verdetto}${e.sicurezza ? ` (sicurezza ${e.sicurezza})` : ''}` : '')}`
+      + `${e.fermato_da ? `<p>Fermato da ${esc(e.fermato_da)}</p>` : ''}</div>`
+      + `<p class="quando">${esc(PIATTAFORME[e.piattaforma] || 'Tutti i social')} · ${esc(e.formato || '')} · aperto ${fa(e.creato_alle)}</p>`
+      + (e.stato === 'in_corso' && sb ? `<button class="bottone-tabella" data-ferma="${e.id}">Ferma</button>` : '');
+    return apri(`esperimento-${e.id}`, `${e.id}. ${esc(e.nome)}`, mdRiga(primaFrase(e.verdetto || e.ipotesi)), `<span class="stato ${classe}">${esc(nome)}</span>`, dentro);
   };
   const inCorso = d.esperimenti.filter((e) => e.stato === 'in_corso');
   const chiusi = d.esperimenti.filter((e) => e.stato !== 'in_corso');
-  return `<div class="griglia">
-    <section class="scheda"><h2>In corso</h2><p class="sotto">${direttoreAcceso(d) ? 'Il Direttore' : 'Lo Stratega'} li apre e li chiude da solo. Se uno è sbagliato, fermatelo.</p>
-      ${inCorso.length ? `<ul class="elenco">${inCorso.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
-    <section class="scheda"><h2>Chiusi</h2><p class="sotto">Si giudicano sul punteggio (40% visualizzazioni, 20% tenuta, 40% interesse: like, commenti, salvati, condivisioni) e sul voto download; se non vanno d'accordo vince il voto download</p>
-      ${chiusi.length ? `<ul class="elenco">${chiusi.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuno.</p>'}</section>
-  </div>`;
+  const lezioni = d.lezioni.map((l) => `<li>${mdRiga(l.testo)} <span class="quando">${fa(l.alle)}${l.sicurezza ? `, sicurezza ${esc(l.sicurezza)}` : ''}</span>`
+    + `${l.contesto || l.numeri ? `<div class="motivo">${esc([l.contesto, l.numeri].filter(Boolean).join(' · '))}</div>` : ''}</li>`).join('');
+  return `<p class="intro-coda">${direttoreAcceso(d) ? 'Il Direttore' : 'Lo Stratega'} li apre e li chiude da solo. Tocca per i dettagli; se uno è sbagliato, fermalo.</p>
+    ${titoloSezione('In corso', String(inCorso.length))}
+    <div class="schede-corte">${inCorso.length ? inCorso.map(voce).join('') : '<p class="vuoto">Nessuno.</p>'}</div>
+    ${titoloSezione('Chiusi', String(chiusi.length))}
+    <div class="schede-corte">${chiusi.length ? chiusi.map(voce).join('') : '<p class="vuoto">Nessuno.</p>'}
+    ${lezioni ? apri('lezioni', 'Lezioni imparate', 'Si possono riprovare, dicendo che cosa cambia', String(d.lezioni.length), `<ul class="elenco">${lezioni}</ul>`) : ''}
+    ${apri('giudizio', 'Come si giudica una prova', 'Punteggio e voto download', '', '<p class="sotto">Punteggio: 40% visualizzazioni, 20% tenuta, 40% interesse (like, commenti, salvati, condivisioni). Se punteggio e voto download non vanno d\'accordo, vince il voto download.</p>')}
+    </div>`;
 }
 
 document.addEventListener('click', async (e) => {
@@ -1272,31 +1337,54 @@ document.addEventListener('click', async (e) => {
   if (attiva === 'esperimenti') mostra('esperimenti');
 });
 
-const STATI_RISPOSTA = { bozza: ['Bozza', ''], a_persona: ['A voi', 'attenzione'], approvata: ['Approvata', 'bene'], inviata: ['Inviata', 'bene'], scartata: ['Scartata', ''] };
+const STATI_RISPOSTA = { bozza: ['In uscita', 'attenzione'], a_persona: ['A voi', 'grave'], approvata: ['In uscita', 'attenzione'], inviata: ['Mandata', 'bene'], scartata: ['Scartata', ''] };
+const TIPI_COMMENTO = { complimento: 'Complimento', domanda: 'Domanda', critica: 'Critica', spam: 'Spam', delicato: 'Delicato', altro: 'Altro' };
+const ATTESA_RISPOSTA_MS = 30 * 60000;  // come community.ATTESA
+const RECENTI_MS = 3 * 86400000;        // come community.RECENTI
 
-// Il Community manager scrive le bozze; qui Ettore e Matteo le approvano (anche cambiate) o le scartano (Matteo, 8/11).
+// Risposte ai commenti (Matteo, 25/11: «Tutto automatico»). Il Community manager scrive, il battito manda: le risposte
+// escono da sole mezz'ora dopo, e in quella mezz'ora si fermano o si cambiano da qui. I commenti delicati restano a voi.
 function paginaCommenti(d) {
-  const voce = (c) => {
-    const [nome, classe] = STATI_RISPOSTA[c.stato] || [c.stato, ''];
-    const aperta = ['bozza', 'a_persona'].includes(c.stato);
-    return `<li><span class="stato ${classe}">${esc(nome)}</span> <b>@${esc(c.autore || '?')}</b> <span class="quando">${esc(PIATTAFORME[c.piattaforma] || c.piattaforma)} · ${esc(c.tipo || '')} · ${fa(c.alle)}</span>`
-      + `<div>«${esc(c.commento)}» ${c.post_url ? `<a href="${esc(c.post_url)}" target="_blank" rel="noopener">post</a>` : ''}</div>`
-      + (c.motivo ? `<div class="motivo">${esc(c.motivo)}</div>` : '')
-      + (aperta && sb
-        ? `<textarea class="bozza" data-testo="${c.id}" rows="2" placeholder="Scrivete la risposta">${esc(c.bozza || '')}</textarea>`
-          + `<button class="bottone-tabella" data-risposta="${c.id}" data-approva="1">Approva</button> <button class="bottone-tabella" data-risposta="${c.id}" data-approva="0">Scarta</button>`
-        : (c.bozza ? `<div>Risposta: ${esc(c.bozza)}${c.decisa_da ? ` <span class="quando">(${esc(c.decisa_da)})</span>` : ''}</div>` : ''))
-      + '</li>';
-  };
   const commenti = d.commenti || [];
-  const aperte = commenti.filter((c) => ['bozza', 'a_persona'].includes(c.stato));
-  const decise = commenti.filter((c) => !['bozza', 'a_persona'].includes(c.stato));
-  return `<div class="griglia">
-    <section class="scheda"><h2>Da decidere</h2><p class="sotto">Bozze del Community manager: niente esce senza il vostro «Approva». Le approvate si mandano con «gestionale community invia».</p>
-      ${aperte.length ? `<ul class="elenco">${aperte.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuna.</p>'}</section>
-    <section class="scheda"><h2>Decise</h2>
-      ${decise.length ? `<ul class="elenco">${decise.map(voce).join('')}</ul>` : '<p class="vuoto">Nessuna.</p>'}</section>
-  </div>`;
+  const adesso = Date.now();
+  const recente = (c) => adesso - new Date(c.alle) < RECENTI_MS;
+  const aVoi = commenti.filter((c) => c.stato === 'a_persona' && recente(c));
+  const inUscita = commenti.filter((c) => (c.stato === 'approvata' || (c.stato === 'bozza' && recente(c))) && (c.bozza || '').trim());
+  const daScrivere = commenti.filter((c) => c.stato === 'bozza' && !(c.bozza || '').trim() && recente(c)).length;
+  const mandate = commenti.filter((c) => c.stato === 'inviata').sort((a, b) => new Date(b.inviata_alle) - new Date(a.inviata_alle));
+  const oggi = giornoQui(new Date());
+  const mandateOggi = mandate.filter((c) => c.inviata_alle && giornoQui(c.inviata_alle) === oggi).length;
+  const vecchie = commenti.filter((c) => ['bozza', 'a_persona'].includes(c.stato) && !recente(c)).length;
+  const spente = d.interruttori.some((i) => ['risposte', 'tutto'].includes(i.nome) && !i.attivo);
+  const quandoEsce = (c) => {
+    if (c.stato === 'approvata' || !c.decisa_alle) return 'al prossimo giro';
+    const ms = new Date(c.decisa_alle).getTime() + ATTESA_RISPOSTA_MS - adesso;
+    return ms > 60000 ? `fra ${Math.ceil(ms / 60000)} min` : 'al prossimo giro';
+  };
+  const testa = (c) => `@${esc(c.autore || '?')}`;
+  const commento = (c) => `<p>«${esc(c.commento)}»${c.post_url ? ` <a href="${esc(c.post_url)}" target="_blank" rel="noopener">post</a>` : ''}</p>`
+    + `<p class="quando">${esc(TIPI_COMMENTO[c.tipo] || c.tipo || '')} · ${fa(c.alle)}${c.motivo ? ` · ${esc(c.motivo)}` : ''}</p>`;
+  const modulo = (c, manda, ferma) => (sb
+    ? `<textarea class="bozza" data-testo="${c.id}" rows="2" placeholder="Scrivete la risposta">${esc(c.bozza || '')}</textarea>`
+      + `<button class="bottone-tabella" data-risposta="${c.id}" data-approva="1">${manda}</button> <button class="bottone-tabella" data-risposta="${c.id}" data-approva="0">${ferma}</button>`
+    : '');
+  const voceAVoi = (c) => apri(`commento-${c.id}`, testa(c), `«${esc(primaFrase(c.commento, 70))}»`, `<span class="stato grave">${esc(TIPI_COMMENTO[c.tipo] || 'A voi')}</span>`,
+    commento(c) + modulo(c, 'Manda', 'Scarta'));
+  const voceInUscita = (c) => apri(`commento-${c.id}`, testa(c), esc(primaFrase(c.bozza, 80)), `<span class="quando">${quandoEsce(c)}</span>`,
+    commento(c) + (c.stato === 'bozza' ? modulo(c, 'Cambia e manda', 'Ferma') : `<p><b>Risposta:</b> ${esc(c.bozza)}</p><p class="quando">Approvata da ${esc(c.decisa_da || '?')}</p>`));
+  const voceMandata = (c) => apri(`commento-${c.id}`, testa(c), esc(primaFrase(c.bozza, 80)), `<span class="quando">${c.inviata_alle ? fa(c.inviata_alle) : ''}</span>`,
+    `${commento(c)}<p><b>Risposta:</b> ${esc(c.bozza || '')}</p><p class="quando">${c.decisa_da === 'automatico' || !c.decisa_da ? 'Uscita da sola' : `Approvata da ${esc(c.decisa_da)}`}</p>`);
+  return `${spente ? '<section class="margine"><h2>Risposte spente</h2><p>L\'interruttore «risposte» (o «tutto») è spento: non esce niente finché non si riaccende.</p></section>' : ''}
+    <div class="tessere tre">${tessera('A voi', numero(aVoi.length), 'commenti delicati')}${tessera('In uscita', numero(inUscita.length), 'escono da sole')}${tessera('Mandate oggi', numero(mandateOggi), `${numero(mandate.length)} in tutto`)}</div>
+    ${titoloSezione('A voi')}
+    <p class="intro-coda">Critiche, rimborsi, domande senza risposta nei fatti: li decidete voi. «Manda» la fa uscire al prossimo giro.</p>
+    <div class="schede-corte">${aVoi.length ? aVoi.map(voceAVoi).join('') : '<p class="vuoto">Nessuno.</p>'}</div>
+    ${titoloSezione('In uscita')}
+    <p class="intro-coda">Le scrive il Community manager alle 12:30 e alle 19:30; escono mezz'ora dopo, 5 alla volta. Fin lì si possono cambiare o fermare.${daScrivere ? ` Altri ${daScrivere} commenti aspettano il suo prossimo giro.` : ''}</p>
+    <div class="schede-corte">${inUscita.length ? inUscita.map(voceInUscita).join('') : '<p class="vuoto">Niente in uscita.</p>'}</div>
+    ${titoloSezione('Mandate')}
+    <div class="schede-corte">${mandate.length ? mandate.slice(0, 30).map(voceMandata).join('') : '<p class="vuoto">Ancora nessuna.</p>'}</div>
+    ${vecchie ? `<p class="quando" style="margin-top:12px">${vecchie} commenti più vecchi di 3 giorni sono nascosti: lì rispondere non serve più, e non escono.</p>` : ''}`;
 }
 
 document.addEventListener('click', async (e) => {
@@ -1305,7 +1393,7 @@ document.addEventListener('click', async (e) => {
   b.disabled = true;
   const testo = document.querySelector(`[data-testo="${b.dataset.risposta}"]`)?.value || null;
   await sb.rpc('decidi_risposta', { p_id: Number(b.dataset.risposta), p_approva: b.dataset.approva === '1', p_testo: testo });
-  const { data, error } = await sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(60);
+  const { data, error } = await sb.from('risposte_commenti').select('*').order('alle', { ascending: false }).limit(300);
   if (!error) dati.commenti = data;
   if (attiva === 'commenti') mostra('commenti');
 });
@@ -1378,13 +1466,15 @@ let attiva = 'oggi';
 let sb = null;
 
 const PAGINE = { oggi: paginaOggi, uscite: paginaCoda, fatti: paginaVideo, risultati: paginaRisultati, app: paginaApp, social: paginaSocial,
-  resoconti: paginaResoconti, esperimenti: paginaEsperimenti, decisioni: paginaDecisioni, commenti: paginaCommenti, richieste: paginaRichieste, modelli: paginaModelli, sistema: paginaSistema };
+  resoconti: paginaResoconti, esperimenti: paginaEsperimenti, decisioni: paginaDecisioni, gratuita: paginaGratuita, pagamento: paginaPagamento,
+  commenti: paginaCommenti, richieste: paginaRichieste, sistema: paginaSistema };
 const DISEGNI = { app: disegnaApp, social: disegnaSocial, risultati: disegnaRisultati };
 
-// I segni rossi sulla barra: quello che aspetta una persona (domande del Direttore e avvisi gravi; commenti da decidere).
+// I segni rossi sulla barra: quello che aspetta una persona (domande del Direttore e avvisi gravi; i commenti delicati
+// degli ultimi 3 giorni: gli altri escono da soli dal 25/11).
 function segni(d) {
   return { oggi: (d.domande || []).length + d.avvisi.filter((a) => a.livello === 'grave').length,
-    altro: (d.commenti || []).filter((c) => ['bozza', 'a_persona'].includes(c.stato)).length };
+    altro: (d.commenti || []).filter((c) => c.stato === 'a_persona' && Date.now() - new Date(c.alle) < RECENTI_MS).length };
 }
 
 // Mostra una pagina: barra delle sezioni, pagine della sezione, contenuto e indirizzo. `daCapo` riporta in cima,

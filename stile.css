@@ -106,7 +106,7 @@ a { color: inherit; text-decoration-color: var(--asse); text-underline-offset: 3
 .pillola { font-size: 13px; color: var(--testo-2); white-space: nowrap; }
 .pillola.esempio { background: var(--evidenziatore); color: var(--testo); padding: 1px 8px; border-radius: 4px; }
 
-/* Le cinque sezioni: sul telefono in basso, sotto il pollice; sul computer in alto. */
+/* Le sei sezioni: sul telefono in basso, sotto il pollice; sul computer in alto. */
 .barra {
   position: fixed;
   left: 0;
@@ -114,7 +114,7 @@ a { color: inherit; text-decoration-color: var(--asse); text-underline-offset: 3
   bottom: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: var(--superficie);
   border-top: 1px solid var(--bordo);
   padding-bottom: env(safe-area-inset-bottom);
@@ -122,7 +122,8 @@ a { color: inherit; text-decoration-color: var(--asse); text-underline-offset: 3
 .barra button {
   position: relative;
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
+  min-width: 0;
   font-weight: 500;
   color: var(--muto);
   background: none;
@@ -188,6 +189,33 @@ main { padding: 4px 16px 32px; max-width: 1100px; margin: 0 auto; outline: none;
 
 .griglia { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
 .tessere { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+
+/* Le schede corte (Matteo, 25/11): titolo, una riga e un numero; si toccano e si apre il dettaglio. */
+.tessere.tre { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tessera.eroe .valore { font-size: 48px; line-height: 1.05; }
+.titolo-sezione { font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 22px 0 8px; }
+.titolo-sezione:first-child { margin-top: 4px; }
+.titolo-sezione .quando { font-family: var(--sans, inherit); font-weight: 400; font-size: 14px; }
+.schede-corte { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
+.apri { background: var(--superficie); border: 1px solid var(--bordo); border-radius: 12px; min-width: 0; }
+.apri > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-height: 56px; -webkit-tap-highlight-color: transparent; }
+.apri > summary::-webkit-details-marker { display: none; }
+.apri > summary::after { content: "›"; color: var(--muto); font-size: 22px; line-height: 1; flex: none; transition: transform .15s; }
+.apri[open] > summary::after { transform: rotate(90deg); }
+.apri[open] { grid-column: 1 / -1; }
+.apri-testa { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.apri-titolo { font-weight: 600; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.apri-riga { font-size: 14px; color: var(--testo-2); line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.apri[open] .apri-riga { -webkit-line-clamp: unset; }
+.apri-valore { flex: none; font-family: var(--serif); font-size: 22px; font-weight: 500; font-variant-numeric: lining-nums; text-align: right; max-width: 45%; }
+.apri-valore .stato, .apri-valore .quando { font-family: var(--sans, inherit); }
+.apri-dentro { padding: 0 14px 14px; border-top: 1px solid var(--griglia); padding-top: 10px; overflow-wrap: anywhere; }
+.apri-dentro > p:first-child { margin-top: 0; }
+.apri-barra { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.apri-barra .sotto { margin: 4px 0 8px; font-size: 14px; color: var(--testo-2); }
+.apri .elenco li:first-child { padding-top: 4px; }
+.apri textarea.bozza { display: block; width: 100%; margin: 8px 0; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--asse); background: var(--superficie); color: var(--testo); resize: vertical; }
+.apri [data-ferma] { margin-top: 8px; }
 
 .scheda {
   background: var(--superficie);
