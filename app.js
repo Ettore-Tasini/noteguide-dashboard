@@ -138,6 +138,14 @@ function datiEsempio() {
     chiusure: [['ipad', 'a_schermo', 'scrivo: penna', 2], ['ipad', 'in_sottofondo', '', 3], ['android-tablet', 'a_schermo', 'tele NxN', 1]]
       .map(([apparecchio, stato, faceva, quanti]) => ({ giorno: isoGiorno(giorniFa(0)), apparecchio, dove: 'app', stato, faceva, versione: '1.0', quanti, tele_max: 12 })),
     costiMese: 0,
+    catenaGiorni: [2, 1, 0].flatMap((i) => [['flex', 'ok', 40, 0.014, 1100], ['standard', 'ok', 6, 0.004, 700], ['gemma', 'ok', 1, 0.0022, null], ['gemma', 'errore', i === 0 ? 1 : 0, 0, null]]
+      .filter((x) => x[2]).map(([gradino, esito, quanti, costo_usd, primo]) => ({ giorno: isoGiorno(giorniFa(i)), gradino, esito, quanti, costo_usd,
+        primo_medio_ms: primo, primo_max_ms: primo && primo * 3, durata_media_ms: 7000, flex_in_coda: gradino === 'standard' ? 2 : 0 }))),
+    catenaRichieste: [
+      { quando: new Date(ora - 4 * 60000).toISOString(), gradino: 'flex', esito: 'ok', primo_ms: 1000, durata_ms: 6800, costo_usd: 0.00035, flex_in_coda: false, passi: [{ g: 'flex', esito: 'ok', primo: 1000, ms: 6800 }] },
+      { quando: new Date(ora - 30 * 60000).toISOString(), gradino: 'standard', esito: 'ok', primo_ms: 700, durata_ms: 17100, costo_usd: 0.00064, flex_in_coda: true,
+        passi: [{ g: 'flex', esito: 'coda', ms: 10000, errore: 'Particle-1 (flex) in coda: nessuna risposta in 10 s' }, { g: 'standard', esito: 'ok', primo: 700, ms: 7100 }] },
+    ],
     credito: [['caricato', '', 5], ['speso', '', 0.82], ['oggi', '', 0.11], ['banco', 'PC-ETTORE', 0.04]]
       .map(([voce, pc, usd]) => ({ giorno: isoGiorno(giorniFa(0)), voce, pc, usd })),
     strategie: [
@@ -294,10 +302,13 @@ async function datiVeri(sb) {
     // Ettore, 23/11: il credito OpenRouter (quaderno e banco dello Scout), le righe degli ultimi giorni.
     tutte(() => sb.from('chiusure_app').select('giorno,apparecchio,dove,stato,faceva,versione,quanti,tele_max', conta).gte('giorno', da).order('giorno')),
     sb.from('credito_openrouter').select('giorno,voce,pc,usd').gte('giorno', isoGiorno(giorniFa(7))).order('giorno'),
+    // Matteo, 24/11: la catena dell'AI gratuita (flex → standard → Gemma), per giorno e le ultime richieste.
+    sb.from('catena_ai_giorni').select('*').gte('giorno', isoGiorno(giorniFa(14))).order('giorno'),
+    sb.from('catena_ai_richieste').select('*').order('quando', { ascending: false }).limit(30),
   ]);
   const errore = risposte.find((r) => r.error);
   if (errore) throw new Error(errore.error.message);
-  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito] = risposte.map((r) => r.data);
+  const [metriche, costi, account, pubblicazioni, metrichePost, avvisi, decisioni, pc, interruttori, inCoda, tasti, richieste, strategie, esperimenti, lezioni, commenti, video, profiloIg, inCorso, turniAperti, domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito, catenaGiorni, catenaRichieste] = risposte.map((r) => r.data);
 
   const perGiorno = new Map();
   const fonti = new Map();
@@ -335,7 +346,7 @@ async function datiVeri(sb) {
       imbuto },
     costiMese: costi.reduce((s, c) => s + Number(c.importo), 0),
     follower, post, avvisi, decisioni, pc, interruttori, tasti, richieste, strategie, esperimenti, lezioni, commenti,
-    domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito,
+    domande, quaderno, fila, conosciuto, aperture, capo, scout, chiusure, credito, catenaGiorni, catenaRichieste,
     // Quello che è già uscito oggi, anche se i suoi numeri non sono ancora stati letti.
     usciteOggi: pubblicazioni.filter((p) => giornoQui(p.pubblicata_alle) === giornoQui(new Date())).map((p) => ({ piattaforma: p.piattaforma,
       quando: p.pubblicata_alle, url: p.url, titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo' })),
@@ -1088,12 +1099,57 @@ function schedaProposta(p) {
       ${(p.fonti || []).length ? `<ul>${p.fonti.map((f) => `<li><a href="${esc(f)}" target="_blank" rel="noopener">${esc(String(f).replace(/^https?:\/\/(www\.)?/, '').slice(0, 60))}</a></li>`).join('')}</ul>` : ''}
     </details></li>`;
 }
+// La catena dell'AI gratuita (Matteo, 24/11): chi ha risposto (Particle-1 flex, standard, Gemma), i tempi e il costo.
+const GRADINI = { flex: 'Particle flex', standard: 'Particle standard', gemma: 'Gemma (riserva)' };
+const ESITI_PASSO = { ok: 'ok', coda: 'in coda', fermo: 'fermo a metà', vuoto: 'vuoto', credito: 'credito finito', errore: 'errore', tetto: 'tetto del giorno' };
+function schedaCatena(d) {
+  const giorni = d.catenaGiorni || [];
+  const ultime = d.catenaRichieste || [];
+  const titolo = '<h2>AI gratuita: chi risponde</h2>';
+  if (!giorni.length && !ultime.length) {
+    return `<section class="scheda">${titolo}<p class="vuoto">Ancora nessun dato: arrivano quando il server con la catena flex → standard → Gemma è pubblicato.</p></section>`;
+  }
+  const oggi = giorni.at(-1)?.giorno;
+  const diOggi = giorni.filter((g) => g.giorno === oggi);
+  const conta = (righe, f) => righe.filter(f).reduce((s, g) => s + g.quanti, 0);
+  const tot = conta(diOggi, () => true);
+  const quota = (n) => (tot ? `${Math.round((n / tot) * 100)}%` : '–');
+  const costo = diOggi.reduce((s, g) => s + Number(g.costo_usd), 0);
+  const primo = (gr) => { const g = diOggi.find((x) => x.gradino === gr && x.esito === 'ok' && x.primo_medio_ms != null); return g ? `${(g.primo_medio_ms / 1000).toFixed(1).replace('.', ',')} s` : '–'; };
+  const errori = conta(diOggi, (g) => g.esito !== 'ok');
+  const tessere = `<div class="tessere">
+      <section class="scheda tessera"><div class="etichetta">Richieste ${giorno(oggi)}</div><div class="valore">${numero(tot)}</div>
+        <div class="delta">Flex ${quota(conta(diOggi, (g) => g.gradino === 'flex' && g.esito === 'ok'))}, standard ${quota(conta(diOggi, (g) => g.gradino === 'standard' && g.esito === 'ok'))}, Gemma ${quota(conta(diOggi, (g) => g.gradino === 'gemma' && g.esito === 'ok'))}${errori ? `, <strong>errori ${errori}</strong>` : ''}</div></section>
+      <section class="scheda tessera"><div class="etichetta">Spesa ${giorno(oggi)}</div><div class="valore">${fmtDollariPiccoli.format(costo)}</div>
+        <div class="delta">Tetto 2 $ al giorno: oltre risponde solo Gemma</div></section>
+      <section class="scheda tessera"><div class="etichetta">Primo pezzo, in media</div><div class="valore">${primo('flex')}</div>
+        <div class="delta">Flex; standard ${primo('standard')}. Oltre 10 s flex è «in coda»: oggi ${numero(diOggi.reduce((s, g) => s + (g.flex_in_coda || 0), 0))} volte</div></section>
+    </div>`;
+  const perGiorno = [...new Set(giorni.map((g) => g.giorno))].sort().reverse().map((gg) => {
+    const r = giorni.filter((g) => g.giorno === gg);
+    return [giorno(gg), numero(conta(r, (g) => g.gradino === 'flex' && g.esito === 'ok')), numero(conta(r, (g) => g.gradino === 'standard' && g.esito === 'ok')),
+      numero(conta(r, (g) => g.gradino === 'gemma' && g.esito === 'ok')), numero(conta(r, (g) => g.esito !== 'ok')),
+      fmtDollariPiccoli.format(r.reduce((s, g) => s + Number(g.costo_usd), 0))];
+  });
+  const passi = (x) => (x.passi || []).map((p) => `${esc(GRADINI[p.g] || p.g)}: ${esc(ESITI_PASSO[p.esito] || p.esito)}`).join(' → ');
+  const centesimi = (usd) => (Number(usd) * 100).toFixed(3).replace('.', ',');
+  const secondi = (ms) => (ms == null ? '–' : `${(ms / 1000).toFixed(1).replace('.', ',')} s`);
+  return `<section class="scheda">${titolo}<p class="sotto">Ogni richiesta gratuita prova Particle flex (costa metà), poi standard, poi Gemma. Si aggiorna ogni mezz'ora</p>
+      ${tessere}
+      <details class="resoconto"><summary>Per giorno (ultimi 14)</summary><div style="overflow-x:auto">${tabella([['Giorno'], ['Flex', 1], ['Std', 1], ['Gemma', 1], ['Err.', 1], ['Spesa', 1]], perGiorno)}</div></details>
+      <details class="resoconto"><summary>Ultime richieste (${ultime.length})</summary><div style="overflow-x:auto">${tabella([['Passi'], ['Primo', 1], ['Durata', 1], ['Cent.', 1]],
+        ultime.map((x) => [`${passi(x) || esc(GRADINI[x.gradino] || x.gradino)}<div class="quando">${fa(x.quando)}</div>`, secondi(x.primo_ms), secondi(x.durata_ms), centesimi(x.costo_usd)]))}</div>
+      <p class="sotto" style="margin:8px 0 0">Costo in centesimi di dollaro: una verifica su flex ne costa circa 0,035, su standard 0,064.</p></details>
+    </section>`;
+}
+
 function paginaModelli(d) {
+  const catena = schedaCatena(d);
   const giri = d.scout || [];
   const [ultimo, ...prima] = giri;
   const app = giri.find((g) => g.dati?.app)?.dati.app;
   const prossimo = `<p class="sotto" style="margin:8px 0 0">Prossimo controllo: ${prossimoLunedi()} dalle 21, sul PC con la cartella dell'app.</p>`;
-  if (!ultimo) return `<section class="scheda"><h2>Modelli AI</h2><p class="vuoto">Lo Scout AI non ha ancora fatto il primo giro.</p>${prossimo}</section>`;
+  if (!ultimo) return `<div class="griglia">${catena}<section class="scheda"><h2>Modelli AI</h2><p class="vuoto">Lo Scout AI non ha ancora fatto il primo giro.</p>${prossimo}</section></div>`;
   const proposte = ultimo.dati?.proposte || [];
   const novita = proposte.length ? `<span class="stato attenzione">${proposte.length === 1 ? 'Una proposta' : `${proposte.length} proposte`}</span>` : '<span class="stato bene">Nessuna novità</span>';
   const inUso = app ? `<section class="scheda"><h2>Nell'app oggi</h2><p class="sotto">Letto dai file dell'app ${fa(giri.find((g) => g.dati?.app).alle)}</p>
@@ -1101,6 +1157,7 @@ function paginaModelli(d) {
         .concat(app.gratuita?.trova ? [['AI gratuita', `<code>${esc(app.gratuita.trova)}</code>`]] : []))}</section>`
     : '';
   return `<div class="griglia">
+    ${catena}
     <section class="scheda"><h2>Ultimo controllo ${novita}</h2><p class="sotto">Lo Scout AI, ${fa(ultimo.alle)}. Guarda se Verifica, Suggerimento e Domanda usano ancora i modelli migliori per quello che costano</p>
       ${proposte.length ? `<ul class="elenco">${proposte.map(schedaProposta).join('')}</ul>
       <p class="sotto" style="margin:8px 0 0">Se una proposta vi convince, ditelo alla chat dell'app: lo Scout non tocca mai l'app.</p>` : ''}
