@@ -13,6 +13,8 @@ const SEZIONI = [
     pagine: [['resoconti', 'Resoconti'], ['esperimenti', 'Esperimenti'], ['decisioni', 'Decisioni']] },
   { id: 'ai', nome: 'AI', icona: '<path d="M11 3.5l1.8 4.7 4.7 1.8-4.7 1.8L11 16.5l-1.8-4.7L4.5 10l4.7-1.8z"/><path d="M18 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
     pagine: [['gratuita', 'Gratuita'], ['pagamento', 'A pagamento']] },
+  // Ettore, 25/11: i problemi aperti dell'app, una cartella per problema, con le richieste e una chat.
+  { id: 'problemi', nome: 'Problemi', icona: '<path d="M12 4.2 3.2 19.5h17.6z"/><path d="M12 10.2v4.6M12 17.1v.4"/>', pagine: [['problemi', 'Problemi']] },
   { id: 'altro', nome: 'Altro', icona: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
     pagine: [['commenti', 'Commenti'], ['richieste', 'Richieste'], ['sistema', 'Sistema']] },
 ];
@@ -239,6 +241,29 @@ function datiEsempio() {
           { piattaforma: p, stato: 'pubblicata', quando: new Date(ora - 2 * 86400000).toISOString(), url: '#', vis: [1400, 320, 85][i] })) },
       { titolo: 'NoteGuide-meme', stato: 'bocciato', creato: new Date(ora - 4 * 86400000).toISOString(), copertina: null, url: null, uscite: [] },
     ],
+    // Problemi inventati: quelli veri stanno solo nel database, dietro il login.
+    email: 'ettore@example.com',
+    membri: [{ email: 'ettore@example.com', nome: 'Ettore' }, { email: 'matteo@example.com', nome: 'Matteo' }],
+    problemiMancano: false,
+    problemi: [
+      { id: 'A1', area: 'I quaderni', gravita: 1, stato: 'corretto, in prova', aperto: true, posto: 1, titolo: 'Esempio: una copertina resta bianca',
+        descrizione: 'Questo è un problema inventato, per far vedere com’è fatta la pagina. Dopo aver cambiato colore a un quaderno, a volte la copertina resta bianca finché non si riapre l’app.',
+        richieste: [{ id: 'A1.1', a: 'Ettore', testo: 'Dire sì alla pubblicazione per tutti.' }, { id: 'A1.2', a: 'Ettore e Matteo', testo: 'Provarlo sul proprio tablet.' }],
+        prossimo_passo: 'Pubblicare la correzione.', aggiornato_alle: new Date(ora - 2 * 3600000).toISOString() },
+      { id: 'C2', area: 'Server e soldi', gravita: 2, stato: 'da decidere', aperto: true, posto: 2, titolo: 'Esempio: quanto spendere per le prove',
+        descrizione: 'Un altro problema inventato, con una decisione da prendere.',
+        richieste: [{ id: 'C2.1', a: 'Matteo', testo: 'Dire un tetto di spesa.' }], prossimo_passo: '', aggiornato_alle: new Date(ora - 26 * 3600000).toISOString() },
+      { id: 'D4', area: 'Sicurezza della pagina', gravita: 4, stato: 'aperto', aperto: true, posto: 3, titolo: 'Esempio: una scritta va a capo male sul telefono',
+        descrizione: 'Un problema piccolo e inventato, senza richieste.', richieste: [], prossimo_passo: 'Nelle fondamenta.', aggiornato_alle: new Date(ora - 50 * 3600000).toISOString() },
+      { id: 'B3', area: 'Aggiornamenti', gravita: 3, stato: 'aperto', aperto: false, posto: 4, titolo: 'Esempio: un problema già risolto', descrizione: '', richieste: [],
+        prossimo_passo: '', aggiornato_alle: new Date(ora - 80 * 3600000).toISOString(), chiuso_alle: new Date(ora - 30 * 3600000).toISOString() },
+    ],
+    messaggiProblemi: [
+      { id: 1, problema: 'A1', da: 'Ettore', testo: 'Ma succede anche sul telefono?', richiesta: null, alle: new Date(ora - 5 * 3600000).toISOString(), letto_alle: new Date(ora - 4 * 3600000).toISOString(), risposto_alle: new Date(ora - 4 * 3600000).toISOString() },
+      { id: 2, problema: 'A1', da: 'Claude', testo: 'No: **solo sul tablet**, e solo dopo aver cambiato colore.', richiesta: null, alle: new Date(ora - 4 * 3600000).toISOString(), letto_alle: null, risposto_alle: null },
+      { id: 3, problema: 'A1', da: 'Matteo', testo: 'Fatto: Provarlo sul proprio tablet.', richiesta: 'A1.2', alle: new Date(ora - 40 * 60000).toISOString(), letto_alle: null, risposto_alle: null },
+      { id: 4, problema: 'C2', da: 'Claude', testo: 'Mi serve un numero entro venerdì.', richiesta: null, alle: new Date(ora - 20 * 3600000).toISOString(), letto_alle: null, risposto_alle: null },
+    ],
     interruttori: ['direttore', 'tutto', 'pubblicazione', 'risposte', 'dm', 'tiktok'].map((nome) => (
       { nome, attivo: nome !== 'tiktok', motivo: nome === 'tiktok' ? 'captcha' : null, cambiato_alle: new Date(ora - 25 * 60000).toISOString() })),
   };
@@ -261,6 +286,7 @@ async function tutte(domanda) {
 }
 
 async function datiVeri(sb) {
+  const problemiInArrivo = leggiProblemi(sb);
   const da = isoGiorno(giorniFa(90));
   const conta = { count: 'exact' };
   const risposte = await Promise.all([
@@ -340,6 +366,7 @@ async function datiVeri(sb) {
     titolo: p.video?.titolo || p.didascalia?.slice(0, 70) || 'Video senza titolo', vis: ultimaVista.get(p.id) ?? null })).filter((p) => p.vis != null);
 
   return {
+    ...await problemiInArrivo,
     esempio: false,
     aggiornato: new Date(),
     // Se nelle bio ci sono i link con la campagna, si vede da quale piattaforma arrivano i download.
@@ -1458,6 +1485,176 @@ document.addEventListener('click', async (e) => {
   await ricaricaRichieste();
 });
 
+// ------------------------------------------------------------- Problemi aperti dell'app
+// Ettore, 25/11: «una parte con le problematiche aperte […] suddivisa in cartelle, in cui ogni cartella è un problema
+// che non abbiamo ancora risolto. Entrando nella cartella c'è la descrizione del problema, le eventuali richieste
+// tue di un'azione da parte nostra, e una chat dove noi possiamo scrivere e il messaggio arriva direttamente a te»
+// (te = il Claude che lavora sull'app). La lista la carica la chat dell'app (`gestionale problemi carica`) e risponde
+// con `gestionale problemi rispondi`. I testi stanno solo nel database, dietro il login: descrivono buchi ancora
+// aperti, e questi file sono pubblici.
+const GRAVITA_PROBLEMI = { 1: 'Letali', 2: 'Gravi', 3: 'Medi', 4: 'Bassi' };
+let soloMiei = false;
+
+// Si leggono a parte: `datiVeri` si ferma al primo errore, e una tabella che manca (la migrazione 018 non ancora
+// applicata, un giro andato male) spegnerebbe tutta la dashboard per una pagina sola.
+async function leggiProblemi(sb) {
+  const niente = { problemiMancano: true, problemi: [], messaggiProblemi: [], membri: [] };
+  try {
+    const [p, m, chi] = await Promise.all([
+      sb.from('problemi').select('*').order('gravita').order('posto'),
+      tutte(() => sb.from('problemi_messaggi').select('id,problema,da,testo,richiesta,alle,letto_alle,risposto_alle', { count: 'exact' }).order('id')),
+      sb.from('membri').select('email,nome'),
+    ]);
+    if (p.error || m.error) return { ...niente, membri: chi.data || [] };
+    return { problemiMancano: false, problemi: p.data, messaggiProblemi: m.data, membri: chi.data || [] };
+  } catch {
+    return niente;
+  }
+}
+
+// Chi sta guardando (Ettore o Matteo), dall'email del login: serve per contare le richieste «per te».
+const chiSono = (d) => (d.membri || []).find((m) => String(m.email).toLowerCase() === String(d.email || '').toLowerCase())?.nome || null;
+const perMe = (r, chi) => !chi || String(r.a || '').includes(chi);      // «Ettore e Matteo» vale per tutti e due
+
+// Fin dove si è letta la chat di ogni problema, su questo dispositivo: è solo per il segno «Risposta nuova».
+function vistiProblemi() {
+  try { return JSON.parse(localStorage.getItem('gestionale.problemi.visti') || '{}') || {}; } catch { return {}; }
+}
+function segnaVisto(sigla, ultimo) {
+  const v = vistiProblemi();
+  if ((v[sigla] || 0) >= ultimo) return;
+  v[sigla] = ultimo;
+  try { localStorage.setItem('gestionale.problemi.visti', JSON.stringify(v)); } catch { /* fa niente */ }
+}
+
+// I problemi aperti con la loro chat: le richieste già segnate «fatte» (la spunta è un messaggio), quante ne
+// restano per chi guarda, e se Claude ha scritto dopo l'ultima volta che la cartella è stata aperta.
+function quadroProblemi(d) {
+  const chi = chiSono(d);
+  const visti = vistiProblemi();
+  const chat = new Map();
+  for (const m of d.messaggiProblemi || []) {
+    if (!chat.has(m.problema)) chat.set(m.problema, []);
+    chat.get(m.problema).push(m);
+  }
+  return (d.problemi || []).filter((p) => p.aperto).map((p) => {
+    const messaggi = chat.get(p.id) || [];
+    const spunte = new Map(messaggi.filter((m) => m.richiesta).map((m) => [m.richiesta, m]));
+    const richieste = (p.richieste || []).map((r) => ({ ...r, fatta: spunte.get(r.id) || null }));
+    const ultima = messaggi.filter((m) => m.da === 'Claude').reduce((n, m) => Math.max(n, Number(m.id)), 0);
+    return { ...p, messaggi, richieste, ultima, daFare: richieste.filter((r) => !r.fatta && perMe(r, chi)).length,
+      nuova: ultima > (visti[p.id] || 0) };
+  });
+}
+// Una cartella aperta è una chat letta.
+function vediLeAperte(d) {
+  for (const p of quadroProblemi(d)) if (aperte.has(`problema-${p.id}`)) segnaVisto(p.id, p.ultima);
+}
+
+function cartellaProblema(p) {
+  const segno = p.nuova ? '<span class="stato grave nuova-risposta">Risposta nuova</span>'
+    : p.daFare ? `<span class="stato attenzione">${p.daFare === 1 ? 'Una richiesta' : `${p.daFare} richieste`}</span>` : '';
+  const richieste = p.richieste.map((r) => `<li><span class="per">Per ${esc(r.a)}</span><span>${esc(r.testo)}</span>`
+    + (r.fatta ? `<span class="stato bene">Fatto da ${esc(r.fatta.da)}, ${fa(r.fatta.alle)}</span>`
+      : `<button class="bottone-tabella" data-fatta="${esc(r.id)}"${sb ? '' : ' disabled'}>Fatto</button>`) + '</li>').join('');
+  const chat = p.messaggi.map((m) => {
+    const diClaude = m.da === 'Claude';
+    const attesa = diClaude || m.risposto_alle ? '' : `<div class="attesa">${m.letto_alle ? 'Letto: la risposta arriva qui' : 'Non ancora letto'}</div>`;
+    return `<li class="${diClaude ? 'di-claude' : 'di-persona'}"><div class="chi">${esc(m.da)} <span class="quando">${fa(m.alle)}</span></div>`
+      + `<div class="resoconto">${diClaude ? markdown(m.testo) : `<p>${esc(m.testo).replace(/\n/g, '<br>')}</p>`}</div>${attesa}</li>`;
+  }).join('');
+  const dentro = `<p class="problema-testo">${esc(p.descrizione)}</p>`
+    + (richieste ? `<h3 class="problema-capo">Cosa vi chiedo</h3><ul class="elenco richieste-problema">${richieste}</ul>` : '')
+    + (p.prossimo_passo ? `<h3 class="problema-capo">Prossimo passo</h3><p class="problema-testo">${esc(p.prossimo_passo)}</p>` : '')
+    + '<h3 class="problema-capo">Chat</h3>'
+    + (chat ? `<ol class="chat">${chat}</ol>` : '<p class="vuoto">Ancora nessun messaggio.</p>')
+    + `<form class="modulo-richiesta modulo-problema" data-problema="${esc(p.id)}">
+        <label for="messaggio-${esc(p.id)}">Scrivi su questo problema</label>
+        <textarea id="messaggio-${esc(p.id)}" rows="3" maxlength="4000" required placeholder="Una domanda, una decisione, un sì"></textarea>
+        <button type="submit"${sb ? '' : ' disabled'}>Invia</button>
+        <p class="sotto esito" role="status">${sb ? 'Lo legge il Claude dell’app quando una sua chat è aperta al computer, e risponde qui.' : 'Con i dati di esempio non si inviano messaggi.'}</p>
+      </form>`;
+  return apri(`problema-${p.id}`, esc(p.titolo), `${esc(p.id)} · ${esc(p.area)} · ${esc(p.stato)}`, segno, dentro, 'problema');
+}
+
+function paginaProblemi(d) {
+  if (d.problemiMancano) {
+    return '<section class="scheda"><h2>Problemi aperti</h2><p class="vuoto">Non riesco a leggerli: nel database manca ancora la loro parte, oppure la lettura non è andata. Riprova fra poco.</p></section>';
+  }
+  const tutti = quadroProblemi(d);
+  if (!tutti.length) return '<section class="scheda"><h2>Problemi aperti</h2><p class="vuoto">La lista non è ancora stata caricata.</p></section>';
+  const mie = tutti.reduce((s, p) => s + p.daFare, 0);
+  const nuove = tutti.filter((p) => p.nuova).length;
+  const perTe = [mie ? (mie === 1 ? 'una richiesta' : `${mie} richieste`) : '', nuove ? (nuove === 1 ? 'una risposta nuova' : `${nuove} risposte nuove`) : ''].filter(Boolean).join(' e ');
+  const mostrati = soloMiei ? tutti.filter((p) => p.daFare || p.nuova || aperte.has(`problema-${p.id}`)) : tutti;
+  const gruppi = [1, 2, 3, 4].map((g) => {
+    const voci = mostrati.filter((p) => p.gravita === g);
+    return voci.length ? `${titoloSezione(GRAVITA_PROBLEMI[g], String(voci.length))}<div class="schede-corte">${voci.map(cartellaProblema).join('')}</div>` : '';
+  }).join('');
+  const risolti = (d.problemi || []).filter((p) => !p.aperto).sort((a, b) => String(b.chiuso_alle || '').localeCompare(String(a.chiuso_alle || '')));
+  return `<p class="intro-coda">${tutti.length === 1 ? 'Un problema aperto' : `${tutti.length} problemi aperti`} dell’app, dal più grave. ${perTe ? `Per te: ${perTe}.` : 'Niente aspetta te.'}</p>`
+    + `<p class="filtro-problemi"><button class="bottone-tabella" data-solo-miei aria-pressed="${soloMiei}">${soloMiei ? 'Mostra tutti' : 'Solo quelli che aspettano me'}</button></p>`
+    + (gruppi || '<p class="vuoto">Niente aspetta te.</p>')
+    + (risolti.length ? `${titoloSezione('Risolti', String(risolti.length))}<div class="schede-corte">${apri('problemi-risolti', 'Quelli chiusi', 'Dal più recente', '',
+      `<ul class="elenco">${risolti.map((p) => `<li><b>${esc(p.titolo)}</b> <span class="quando">${esc(p.id)}${p.chiuso_alle ? ` · chiuso ${fa(p.chiuso_alle)}` : ''}</span></li>`).join('')}</ul>`)}</div>` : '');
+}
+
+// Rilegge solo i problemi (dopo un messaggio, e ogni mezzo minuto mentre la pagina è in vista: è una chat). Se non è
+// cambiato niente non ridisegna, così chi sta leggendo non si vede muovere la pagina.
+async function ricaricaProblemi() {
+  if (!sb || !dati) return;
+  const nuovi = await leggiProblemi(sb);
+  if (nuovi.problemiMancano) return;
+  const firma = (x) => JSON.stringify([x.problemi, x.messaggiProblemi]);
+  if (firma(nuovi) === firma(dati)) return;
+  Object.assign(dati, nuovi);
+  if (attiva === 'problemi') { const giu = scrollY; mostra('problemi'); scrollTo(0, giu); } else disegnaBarra();
+}
+
+document.addEventListener('submit', async (e) => {
+  const modulo = e.target.closest?.('.modulo-problema');
+  if (!modulo) return;
+  e.preventDefault();
+  const campo = modulo.querySelector('textarea');
+  const testo = campo.value.trim();
+  if (!testo || !sb) return;
+  const bottone = modulo.querySelector('button');
+  bottone.disabled = true;
+  const { error } = await sb.rpc('scrivi_al_problema', { p_problema: modulo.dataset.problema, p_testo: testo });
+  if (error) {
+    modulo.querySelector('.esito').textContent = `Non è andata: ${error.message}`;
+    bottone.disabled = false;
+    return;
+  }
+  campo.value = '';
+  await ricaricaProblemi();
+});
+
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-solo-miei]')) {
+    soloMiei = !soloMiei;
+    mostra('problemi');
+    return;
+  }
+  const b = e.target.closest('[data-fatta]');
+  if (!b || !sb) return;
+  b.disabled = true;
+  const { error } = await sb.rpc('segna_richiesta_fatta', { p_richiesta: b.dataset.fatta });
+  if (error) { b.disabled = false; b.textContent = 'Non è andata: riprova'; return; }
+  await ricaricaProblemi();
+});
+
+// Aprire una cartella vuol dire aver letto la sua chat: il segno «Risposta nuova» se ne va, da lì e dalla barra.
+document.addEventListener('toggle', (e) => {
+  const id = e.target.dataset?.apri || '';
+  if (!id.startsWith('problema-') || !e.target.open || !dati) return;
+  const p = quadroProblemi(dati).find((x) => `problema-${x.id}` === id);
+  if (!p || !p.nuova) return;
+  segnaVisto(p.id, p.ultima);
+  e.target.querySelector('.nuova-risposta')?.remove();
+  disegnaBarra();
+}, true);
+
 // ---------------------------------------------------------------- avvio
 
 const tabelle = {};
@@ -1467,14 +1664,26 @@ let sb = null;
 
 const PAGINE = { oggi: paginaOggi, uscite: paginaCoda, fatti: paginaVideo, risultati: paginaRisultati, app: paginaApp, social: paginaSocial,
   resoconti: paginaResoconti, esperimenti: paginaEsperimenti, decisioni: paginaDecisioni, gratuita: paginaGratuita, pagamento: paginaPagamento,
-  commenti: paginaCommenti, richieste: paginaRichieste, sistema: paginaSistema };
+  commenti: paginaCommenti, richieste: paginaRichieste, sistema: paginaSistema, problemi: paginaProblemi };
 const DISEGNI = { app: disegnaApp, social: disegnaSocial, risultati: disegnaRisultati };
 
 // I segni rossi sulla barra: quello che aspetta una persona (domande del Direttore e avvisi gravi; i commenti delicati
 // degli ultimi 3 giorni: gli altri escono da soli dal 25/11).
 function segni(d) {
   return { oggi: (d.domande || []).length + d.avvisi.filter((a) => a.livello === 'grave').length,
-    altro: (d.commenti || []).filter((c) => c.stato === 'a_persona' && Date.now() - new Date(c.alle) < RECENTI_MS).length };
+    altro: (d.commenti || []).filter((c) => c.stato === 'a_persona' && Date.now() - new Date(c.alle) < RECENTI_MS).length,
+    // Problemi dell'app: le richieste per chi guarda non ancora segnate «fatte» e le risposte di Claude non lette.
+    problemi: quadroProblemi(d).reduce((s, p) => s + p.daFare + (p.nuova ? 1 : 0), 0) };
+}
+
+// La barra delle sezioni, con i segni. Sta a parte perché i segni cambiano anche senza cambiare pagina (una cartella
+// dei problemi aperta, un messaggio arrivato).
+function disegnaBarra() {
+  const sezione = sezioneDi(attiva);
+  const n = segni(dati);
+  document.getElementById('schede').innerHTML = SEZIONI.map((s) => `<button data-sezione="${s.id}" aria-current="${s.id === sezione.id ? 'page' : 'false'}">`
+    + `<svg viewBox="0 0 24 24" aria-hidden="true">${s.icona}</svg><span>${esc(s.nome)}</span>`
+    + (n[s.id] ? `<span class="segno" aria-label="${n[s.id]} da guardare">${n[s.id]}</span>` : '') + '</button>').join('');
 }
 
 // Mostra una pagina: barra delle sezioni, pagine della sezione, contenuto e indirizzo. `daCapo` riporta in cima,
@@ -1487,10 +1696,8 @@ function mostra(id, daCapo = false) {
   const sezione = sezioneDi(id);
   ricorda(sezione.id, id);
   const fuoco = document.activeElement?.dataset || {};
-  const n = segni(dati);
-  document.getElementById('schede').innerHTML = SEZIONI.map((s) => `<button data-sezione="${s.id}" aria-current="${s.id === sezione.id ? 'page' : 'false'}">`
-    + `<svg viewBox="0 0 24 24" aria-hidden="true">${s.icona}</svg><span>${esc(s.nome)}</span>`
-    + (n[s.id] ? `<span class="segno" aria-label="${n[s.id]} da guardare">${n[s.id]}</span>` : '') + '</button>').join('');
+  if (id === 'problemi') vediLeAperte(dati);
+  disegnaBarra();
   const viste = document.getElementById('viste');
   viste.hidden = sezione.pagine.length < 2;
   viste.innerHTML = sezione.pagine.map(([p, nome]) => `<button data-pagina="${p}" aria-current="${p === id ? 'page' : 'false'}">${esc(nome)}</button>`).join('');
@@ -1588,6 +1795,8 @@ async function avvia() {
       return;
     }
     setInterval(rileggi, 60000);
+    // La chat dei problemi: mentre la pagina è in vista si rilegge ogni mezzo minuto (solo le sue due tabelle).
+    setInterval(() => { if (attiva === 'problemi' && !document.hidden && !staScrivendo()) ricaricaProblemi(); }, 30000);
     document.addEventListener('visibilitychange', rileggi);
   }
   mostra(paginaDa(location.hash));
